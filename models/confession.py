@@ -63,6 +63,7 @@ class ConfessionReply:
     discord_id: str
     content: str
     message_id: Optional[str]
+    status: str              # 'pending' | 'posted' | 'rejected'
     created_at: datetime
 
     @classmethod
@@ -74,5 +75,6 @@ class ConfessionReply:
             discord_id=data["discord_id"],
             content=data["content"],
             message_id=data.get("message_id"),
+            status=data.get("status", "posted"),
             created_at=datetime.fromisoformat(str(data["created_at"])),
         )

@@ -648,6 +648,7 @@ class DatabaseClient:
         guild_id: str,
         discord_id: str,
         content: str,
+        status: str = "posted",
     ) -> ConfessionReply:
         result = await (
             self._client.table("confession_replies")
@@ -656,6 +657,7 @@ class DatabaseClient:
                 "guild_id": guild_id,
                 "discord_id": discord_id,
                 "content": content,
+                "status": status,
             })
             .execute()
         )
@@ -667,6 +669,55 @@ class DatabaseClient:
         await (
             self._client.table("confession_replies")
             .update({"message_id": message_id})
+            .eq("id", reply_id)
+            .execute()
+        )
+
+    async def get_confession_reply_by_id(self, reply_id: str) -> ConfessionReply | None:
+        result = await (
+            self._client.table("confession_replies")
+            .select("*")
+            .eq("id", reply_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return None
+        return ConfessionReply.from_dict(result.data[0])
+
+    async def update_reply_status(
+        self,
+        reply_id: str,
+        status: str,
+        message_id: str | None = None,
+    ) -> None:
+        updates: dict = {"status": status}
+        if message_id is not None:
+            updates["message_id"] = message_id
+        await (
+            self._client.table("confession_replies")
+            .update(updates)
+            .eq("id", reply_id)
+            .execute()
+        )
+
+    async def get_pending_replies(
+        self, guild_id: str | None = None
+    ) -> list[ConfessionReply]:
+        query = (
+            self._client.table("confession_replies")
+            .select("*")
+            .eq("status", "pending")
+        )
+        if guild_id is not None:
+            query = query.eq("guild_id", guild_id)
+        result = await query.execute()
+        return [ConfessionReply.from_dict(r) for r in result.data]
+
+    async def delete_confession_reply(self, reply_id: str) -> None:
+        await (
+            self._client.table("confession_replies")
+            .delete()
             .eq("id", reply_id)
             .execute()
         )

@@ -17,6 +17,7 @@ from ui.embeds import (
     COLOR_RED,
     confession_embed,
     confession_reply_embed,
+    confession_reply_pending_embed,
     confession_pending_embed,
     confession_report_embed,
     error_embed,

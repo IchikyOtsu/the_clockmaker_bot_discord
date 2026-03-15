@@ -4,7 +4,7 @@ from datetime import date
 import discord
 
 from models.character import Character
-from models.confession import Confession, ConfessionReply
+from models.confession import Confession, ConfessionBan, ConfessionReply
 from models.tirage import TirageCard, Defi, TirageLog
 from models.weather import WeatherType
 
@@ -209,6 +209,30 @@ def confession_pending_embed(confession: Confession, channel_name: str = "") -> 
     embed.add_field(
         name="User",
         value=f"<@{confession.discord_id}> (`{confession.discord_id}`)",
+        inline=False,
+    )
+    embed.set_footer(text="The Clockmaster")
+    return embed
+
+
+def confession_reply_pending_embed(
+    reply: ConfessionReply, confession: Confession, channel_name: str = ""
+) -> discord.Embed:
+    """Embed envoyé au salon modération pour une réponse en attente de validation."""
+    title = "Reply Awaiting Review"
+    if channel_name:
+        title += f" for #{channel_name}"
+    title += f" (re: #{confession.number})"
+    embed = discord.Embed(title=title, description=reply.content, color=COLOR_DARK)
+    preview = confession.content if len(confession.content) <= 80 else confession.content[:77] + "…"
+    embed.add_field(
+        name=f"In response to Confession #{confession.number}",
+        value=f"*{preview}*",
+        inline=False,
+    )
+    embed.add_field(
+        name="User",
+        value=f"<@{reply.discord_id}> (`{reply.discord_id}`)",
         inline=False,
     )
     embed.set_footer(text="The Clockmaster")
