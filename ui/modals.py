@@ -1,3 +1,4 @@
+import traceback
 import uuid
 
 import discord
@@ -112,6 +113,7 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
         await interaction.followup.send(embed=character_created_embed(character), ephemeral=True)
 
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
+        traceback.print_exception(type(error), error, error.__traceback__)
         msg = "Une erreur inattendue est survenue. Réessaie plus tard."
         try:
             await interaction.response.send_message(embed=error_embed(msg), ephemeral=True)
