@@ -334,6 +334,8 @@ class ReputationAmountModal(discord.ui.Modal):
         current_rep: int,
         guild_id: str,
         mode: str,
+        select_message: discord.Message | None = None,
+        mod_message: discord.Message | None = None,
     ) -> None:
         super().__init__(
             title="Ajouter de la réputation" if mode == "add" else "Retirer de la réputation"
@@ -344,6 +346,8 @@ class ReputationAmountModal(discord.ui.Modal):
         self._current_rep = current_rep
         self._guild_id = guild_id
         self._mode = mode
+        self._select_message = select_message
+        self._mod_message = mod_message
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -378,6 +382,20 @@ class ReputationAmountModal(discord.ui.Modal):
             ephemeral=True,
         )
 
+        # Supprimer la liste déroulante éphémère
+        if self._select_message:
+            try:
+                await self._select_message.delete()
+            except (discord.NotFound, discord.HTTPException):
+                pass
+
+        # Retirer les boutons réputation du message mod
+        if self._mod_message:
+            try:
+                await self._mod_message.edit(view=None)
+            except (discord.NotFound, discord.HTTPException):
+                pass
+
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
         import traceback; traceback.print_exc()
         try:
@@ -395,12 +413,15 @@ class CharacterSelectView(discord.ui.View):
         mode: str,
         characters: list,
         guild_id: str,
+        mod_message: discord.Message | None = None,
     ) -> None:
         super().__init__(timeout=60)
         self._cog = cog
         self._mode = mode
         self._guild_id = guild_id
+        self._mod_message = mod_message
         self._char_map = {str(c.id): c for c in characters}
+        self._select_message: discord.Message | None = None  # set after send
 
         options = [
             discord.SelectOption(
@@ -428,6 +449,8 @@ class CharacterSelectView(discord.ui.View):
                 char.reputation,
                 self._guild_id,
                 self._mode,
+                select_message=self._select_message,
+                mod_message=self._mod_message,
             )
         )
 
@@ -445,6 +468,7 @@ class ReputationView(discord.ui.View):
     async def _open_select(
         self, interaction: discord.Interaction, mode: str
     ) -> None:
+        mod_message = interaction.message
         await interaction.response.defer(ephemeral=True)
         characters = await self._cog.db.list_guild_characters(str(interaction.guild_id))
         if not characters:
@@ -453,10 +477,13 @@ class ReputationView(discord.ui.View):
                 ephemeral=True,
             )
             return
-        view = CharacterSelectView(self._cog, mode, characters, str(interaction.guild_id))
-        await interaction.followup.send(
-            "Choisissez un personnage :", view=view, ephemeral=True
+        view = CharacterSelectView(
+            self._cog, mode, characters, str(interaction.guild_id), mod_message=mod_message
         )
+        select_msg = await interaction.followup.send(
+            "Choisissez un personnage :", view=view, ephemeral=True, wait=True
+        )
+        view._select_message = select_msg
 
     @discord.ui.button(
         label="+ Réputation",
