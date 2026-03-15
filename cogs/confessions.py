@@ -174,6 +174,54 @@ class ConfessionPublicView(discord.ui.View):
 
 
 # ---------------------------------------------------------------------------
+# ReplyReviewView — persistent, boutons de modération pour les réponses
+# ---------------------------------------------------------------------------
+
+class ReplyReviewView(discord.ui.View):
+    """Vue attachée aux réponses en attente dans le salon modération."""
+
+    def __init__(self, cog: ConfessionsCog, reply_id: str) -> None:
+        super().__init__(timeout=None)
+        self._cog = cog
+        self._reply_id = reply_id
+        self.approve_btn.custom_id  = f"conf_ra:{reply_id}"
+        self.deny_btn.custom_id     = f"conf_rd:{reply_id}"
+        self.deny_ban_btn.custom_id = f"conf_rdb:{reply_id}"
+
+    @discord.ui.button(
+        label="Approve",
+        style=discord.ButtonStyle.success,
+        custom_id="conf_ra:placeholder",
+        emoji="✅",
+    )
+    async def approve_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self._cog._handle_reply_approve(interaction, self._reply_id)
+
+    @discord.ui.button(
+        label="Deny",
+        style=discord.ButtonStyle.danger,
+        custom_id="conf_rd:placeholder",
+    )
+    async def deny_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self._cog._handle_reply_deny(interaction, self._reply_id)
+
+    @discord.ui.button(
+        label="Deny & confessban",
+        style=discord.ButtonStyle.danger,
+        custom_id="conf_rdb:placeholder",
+        emoji="🔨",
+    )
+    async def deny_ban_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self._cog._handle_reply_deny(interaction, self._reply_id, also_ban=True)
+
+
+# ---------------------------------------------------------------------------
 # ReviewView — persistent (timeout=None), 5 boutons de modération
 # ---------------------------------------------------------------------------
 
@@ -286,6 +334,9 @@ class ConfessionsCog(commands.Cog):
         posted = await self.db.get_posted_confessions()
         for confession in posted:
             self.bot.add_view(ConfessionPublicView(self, str(confession.id)))
+        pending_replies = await self.db.get_pending_replies()
+        for reply in pending_replies:
+            self.bot.add_view(ReplyReviewView(self, str(reply.id)))
 
     # ------------------------------------------------------------------
     # Helpers internes
@@ -402,6 +453,29 @@ class ConfessionsCog(commands.Cog):
             ephemeral=True,
         )
 
+    async def _get_or_create_reply_thread(
+        self, confession: Confession
+    ) -> discord.Thread | None:
+        """Récupère ou crée le fil de discussion pour les réponses à une confession."""
+        if not confession.message_id or not confession.channel_id:
+            return None
+        channel = self.bot.get_channel(int(confession.channel_id))
+        if channel is None:
+            return None
+        try:
+            msg = await channel.fetch_message(int(confession.message_id))
+        except (discord.NotFound, discord.HTTPException):
+            return None
+        if msg.thread:
+            return msg.thread
+        try:
+            return await msg.create_thread(
+                name=f"Confession Replies (#{confession.number})",
+                auto_archive_duration=10080,  # 7 jours
+            )
+        except discord.HTTPException:
+            return None
+
     async def _handle_reply_submit(
         self,
         interaction: discord.Interaction,
@@ -418,32 +492,67 @@ class ConfessionsCog(commands.Cog):
             )
             return
 
+        cfg = await self.db.get_guild_config(guild_id)
+
+        if cfg and cfg.confession_review_mode:
+            # Mode révision : envoyer la réponse en attente dans le salon mod
+            if not cfg.confession_mod_channel_id:
+                await interaction.response.send_message(
+                    embed=error_embed(
+                        "Le mode révision est activé mais aucun salon modération n'est configuré."
+                    ),
+                    ephemeral=True,
+                )
+                return
+            mod_channel = self.bot.get_channel(int(cfg.confession_mod_channel_id))
+            if mod_channel is None:
+                await interaction.response.send_message(
+                    embed=error_embed("Le salon modération est introuvable."), ephemeral=True
+                )
+                return
+            try:
+                reply = await self.db.create_confession_reply(
+                    str(confession.id), guild_id, discord_id, content, status="pending"
+                )
+            except DatabaseError as exc:
+                await interaction.response.send_message(embed=error_embed(str(exc)), ephemeral=True)
+                return
+            channel_name = await self._get_channel_name(cfg)
+            view = ReplyReviewView(self, str(reply.id))
+            await mod_channel.send(
+                embed=confession_reply_pending_embed(reply, confession, channel_name=channel_name),
+                view=view,
+            )
+            self.bot.add_view(view)
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="Réponse soumise",
+                    description="Ta réponse est en attente de validation par les modérateurs.",
+                    color=COLOR_DARK,
+                ),
+                ephemeral=True,
+            )
+            return
+
+        # Pas de review mode : publier directement dans le fil
         try:
             reply = await self.db.create_confession_reply(
-                str(confession.id), guild_id, discord_id, content
+                str(confession.id), guild_id, discord_id, content, status="posted"
             )
         except DatabaseError as exc:
             await interaction.response.send_message(embed=error_embed(str(exc)), ephemeral=True)
             return
 
-        cfg = await self.db.get_guild_config(guild_id)
-        target_channel_id = confession.channel_id or (cfg.confession_channel_id if cfg else None)
-        if not target_channel_id:
+        thread = await self._get_or_create_reply_thread(confession)
+        if thread is None:
             await interaction.response.send_message(
-                embed=error_embed("Impossible de déterminer le salon de la confession."),
+                embed=error_embed("Impossible de créer le fil de réponses pour cette confession."),
                 ephemeral=True,
             )
             return
 
-        channel = self.bot.get_channel(int(target_channel_id))
-        if channel is None:
-            await interaction.response.send_message(
-                embed=error_embed("Le salon de confessions est introuvable."), ephemeral=True
-            )
-            return
-
-        msg = await channel.send(embed=confession_reply_embed(reply, confession.number))
-        await self.db.update_reply_message_id(str(reply.id), str(msg.id))
+        msg = await thread.send(embed=confession_reply_embed(reply, confession.number))
+        await self.db.update_reply_status(str(reply.id), "posted", message_id=str(msg.id))
         await interaction.response.send_message(
             embed=discord.Embed(
                 title="Réponse envoyée",
@@ -452,6 +561,98 @@ class ConfessionsCog(commands.Cog):
             ),
             ephemeral=True,
         )
+
+    async def _handle_reply_approve(
+        self,
+        interaction: discord.Interaction,
+        reply_id: str,
+    ) -> None:
+        reply = await self.db.get_confession_reply_by_id(reply_id)
+        if not reply:
+            await interaction.response.send_message(
+                embed=error_embed("Réponse introuvable."), ephemeral=True
+            )
+            return
+
+        confession = await self.db.get_confession_by_id(str(reply.confession_id))
+        if not confession:
+            await interaction.response.send_message(
+                embed=error_embed("La confession associée est introuvable."), ephemeral=True
+            )
+            return
+
+        thread = await self._get_or_create_reply_thread(confession)
+        if thread is None:
+            await interaction.response.send_message(
+                embed=error_embed("Impossible de trouver ou créer le fil de réponses."),
+                ephemeral=True,
+            )
+            return
+
+        msg = await thread.send(embed=confession_reply_embed(reply, confession.number))
+        await self.db.update_reply_status(reply_id, "posted", message_id=str(msg.id))
+
+        cfg = await self.db.get_guild_config(str(interaction.guild_id))
+        channel_name = await self._get_channel_name(cfg)
+        approved_embed = confession_reply_pending_embed(reply, confession, channel_name=channel_name)
+        approved_embed.set_footer(
+            text=f"✅ Approuvée par {interaction.user} • publiée dans #{thread.name} • The Clockmaster"
+        )
+        await interaction.response.edit_message(embed=approved_embed, view=None)
+
+        try:
+            user = await self.bot.fetch_user(int(reply.discord_id))
+            await user.send(f"Ta réponse à la confession #{confession.number} a été approuvée et publiée anonymement.")
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+    async def _handle_reply_deny(
+        self,
+        interaction: discord.Interaction,
+        reply_id: str,
+        also_ban: bool = False,
+    ) -> None:
+        reply = await self.db.get_confession_reply_by_id(reply_id)
+        if not reply:
+            await interaction.response.send_message(
+                embed=error_embed("Réponse introuvable."), ephemeral=True
+            )
+            return
+
+        confession = await self.db.get_confession_by_id(str(reply.confession_id))
+        await self.db.delete_confession_reply(reply_id)
+
+        if also_ban:
+            await self.db.ban_confessor(
+                reply.guild_id, reply.discord_id, str(interaction.user.id)
+            )
+
+        cfg = await self.db.get_guild_config(str(interaction.guild_id))
+        channel_name = await self._get_channel_name(cfg) if cfg else ""
+
+        action = f"❌ Rejetée par {interaction.user}"
+        if also_ban:
+            action += " • utilisateur banni"
+
+        if confession:
+            denied_embed = confession_reply_pending_embed(reply, confession, channel_name=channel_name)
+        else:
+            denied_embed = discord.Embed(
+                title="Reply Awaiting Review",
+                description=reply.content,
+                color=COLOR_DARK,
+            )
+        denied_embed.set_footer(text=f"{action} • The Clockmaster")
+        await interaction.response.edit_message(embed=denied_embed, view=None)
+
+        dm_msg = "Ta réponse à une confession a été refusée par les modérateurs."
+        if also_ban:
+            dm_msg += "\nTu as également été banni(e) des confessions sur ce serveur."
+        try:
+            user = await self.bot.fetch_user(int(reply.discord_id))
+            await user.send(dm_msg)
+        except (discord.Forbidden, discord.HTTPException):
+            pass
 
     async def _handle_review_approve(
         self,

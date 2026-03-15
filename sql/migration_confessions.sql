@@ -31,8 +31,15 @@ CREATE TABLE IF NOT EXISTS confession_replies (
     discord_id     TEXT    NOT NULL,
     content        TEXT    NOT NULL,
     message_id     TEXT,
+    status         TEXT    NOT NULL DEFAULT 'posted'
+                           CHECK (status IN ('pending', 'posted', 'rejected')),
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migration : ajouter status si la table existe déjà
+ALTER TABLE confession_replies
+    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'posted'
+    CHECK (status IN ('pending', 'posted', 'rejected'));
 
 -- RPC pour numérotation séquentielle sans race condition
 -- (utilise FOR UPDATE pour verrouiller les lignes du guild pendant le calcul)
