@@ -9,6 +9,7 @@ from supabase import acreate_client, AsyncClient
 from models.character import Character, _compute_age
 from models.guild_config import GuildConfig
 from models.race import Race
+from models.confession import Confession, ConfessionBan, ConfessionReply
 from models.tirage import CardType, TirageCard, Defi, TirageLog, TIRAGE_CARD_BUCKET
 from models.weather import WeatherType
 
@@ -482,6 +483,193 @@ class DatabaseClient:
         if not result.data:
             raise DatabaseError("Échec de la suppression.")
         return target
+
+    # ------------------------------------------------------------------
+    # Confession Bans
+    # ------------------------------------------------------------------
+
+    async def is_confession_banned(self, guild_id: str, discord_id: str) -> bool:
+        result = await (
+            self._client.table("confession_bans")
+            .select("discord_id", count="exact")
+            .eq("guild_id", guild_id)
+            .eq("discord_id", discord_id)
+            .execute()
+        )
+        return (result.count or 0) > 0
+
+    async def ban_confessor(
+        self, guild_id: str, discord_id: str, banned_by: str
+    ) -> None:
+        await (
+            self._client.table("confession_bans")
+            .upsert(
+                {"guild_id": guild_id, "discord_id": discord_id, "banned_by": banned_by},
+                on_conflict="guild_id,discord_id",
+            )
+            .execute()
+        )
+
+    async def unban_confessor(self, guild_id: str, discord_id: str) -> None:
+        result = await (
+            self._client.table("confession_bans")
+            .delete()
+            .eq("guild_id", guild_id)
+            .eq("discord_id", discord_id)
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Cet utilisateur n'est pas banni.")
+
+    async def get_confession_bans(self, guild_id: str) -> list[ConfessionBan]:
+        result = await (
+            self._client.table("confession_bans")
+            .select("*")
+            .eq("guild_id", guild_id)
+            .order("created_at")
+            .execute()
+        )
+        return [ConfessionBan.from_dict(r) for r in result.data]
+
+    # ------------------------------------------------------------------
+    # Confessions
+    # ------------------------------------------------------------------
+
+    async def create_confession(
+        self,
+        guild_id: str,
+        discord_id: str,
+        content: str,
+        status: str = "posted",
+    ) -> Confession:
+        # Numérotation séquentielle via RPC (FOR UPDATE évite les race conditions)
+        number_result = await self._client.rpc(
+            "next_confession_number", {"p_guild_id": guild_id}
+        ).execute()
+        number = number_result.data
+
+        result = await (
+            self._client.table("confessions")
+            .insert({
+                "guild_id": guild_id,
+                "discord_id": discord_id,
+                "number": number,
+                "content": content,
+                "status": status,
+            })
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Échec de l'enregistrement de la confession.")
+        return Confession.from_dict(result.data[0])
+
+    async def update_confession_status(
+        self,
+        confession_id: str,
+        status: str,
+        message_id: str | None = None,
+        channel_id: str | None = None,
+    ) -> Confession:
+        updates: dict = {"status": status}
+        if message_id is not None:
+            updates["message_id"] = message_id
+        if channel_id is not None:
+            updates["channel_id"] = channel_id
+        result = await (
+            self._client.table("confessions")
+            .update(updates)
+            .eq("id", confession_id)
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Confession introuvable.")
+        return Confession.from_dict(result.data[0])
+
+    async def get_confession_by_id(self, confession_id: str) -> Confession | None:
+        result = await (
+            self._client.table("confessions")
+            .select("*")
+            .eq("id", confession_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return None
+        return Confession.from_dict(result.data[0])
+
+    async def get_confession_by_short_id(
+        self, guild_id: str, short_id: str
+    ) -> Confession | None:
+        # PostgREST ne supporte pas LIKE sur colonnes UUID natives → fetch + match Python
+        result = await (
+            self._client.table("confessions")
+            .select("*")
+            .eq("guild_id", guild_id)
+            .execute()
+        )
+        for row in result.data:
+            if str(row["id"]).startswith(short_id.lower()):
+                return Confession.from_dict(row)
+        return None
+
+    async def get_pending_confessions(
+        self, guild_id: str | None = None
+    ) -> list[Confession]:
+        query = (
+            self._client.table("confessions")
+            .select("*")
+            .eq("status", "pending")
+        )
+        if guild_id is not None:
+            query = query.eq("guild_id", guild_id)
+        result = await query.execute()
+        return [Confession.from_dict(r) for r in result.data]
+
+    async def get_posted_confessions(
+        self, guild_id: str | None = None
+    ) -> list[Confession]:
+        query = (
+            self._client.table("confessions")
+            .select("*")
+            .eq("status", "posted")
+        )
+        if guild_id is not None:
+            query = query.eq("guild_id", guild_id)
+        result = await query.execute()
+        return [Confession.from_dict(r) for r in result.data]
+
+    # ------------------------------------------------------------------
+    # Confession Replies
+    # ------------------------------------------------------------------
+
+    async def create_confession_reply(
+        self,
+        confession_id: str,
+        guild_id: str,
+        discord_id: str,
+        content: str,
+    ) -> ConfessionReply:
+        result = await (
+            self._client.table("confession_replies")
+            .insert({
+                "confession_id": confession_id,
+                "guild_id": guild_id,
+                "discord_id": discord_id,
+                "content": content,
+            })
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Échec de l'enregistrement de la réponse.")
+        return ConfessionReply.from_dict(result.data[0])
+
+    async def update_reply_message_id(self, reply_id: str, message_id: str) -> None:
+        await (
+            self._client.table("confession_replies")
+            .update({"message_id": message_id})
+            .eq("id", reply_id)
+            .execute()
+        )
 
     # ------------------------------------------------------------------
     # Tirage Cards

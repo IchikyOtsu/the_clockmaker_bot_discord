@@ -37,6 +37,7 @@ class ClockMasterBot(commands.Bot):
         await self.load_extension("cogs.tarokka")
         await self.load_extension("cogs.tirage_admin")
         await self.load_extension("cogs.help")
+        await self.load_extension("cogs.confessions")
 
         if config.DEV_GUILD_ID:
             guild = discord.Object(id=config.DEV_GUILD_ID)

@@ -52,6 +52,13 @@ def _build_embeds() -> dict[str, discord.Embed]:
                 ("/races list", "Afficher toutes les races disponibles"),
             ]),
         ]),
+        "confessions": embed("💬  Confessions", [
+            ("Commandes joueur", [
+                ("/confess",      "Soumettre une confession anonyme"),
+                ("/reply <id>",   "Répondre anonymement à une confession"),
+                ("/report <id>",  "Signaler une confession aux modérateurs"),
+            ]),
+        ]),
         "admin": embed("🔒  Administration", [
             ("Météo & Anniversaires", [
                 ("/config-meteo", "Configurer le salon et l'heure d'annonce météo"),
@@ -83,6 +90,12 @@ def _build_embeds() -> dict[str, discord.Embed]:
                 ("/defi link",   "Lier un défi à une carte"),
                 ("/defi unlink", "Délier un défi d'une carte"),
             ]),
+            ("Confessions", [
+                ("/confession setup",     "Configurer le salon et le mode révision"),
+                ("/confession ban",       "Bannir un utilisateur des confessions"),
+                ("/confession unban",     "Débannir un utilisateur"),
+                ("/confession list-bans", "Voir les utilisateurs bannis"),
+            ]),
         ]),
     }
 
@@ -107,12 +120,14 @@ def _home_embed() -> discord.Embed:
 # View principale
 # ---------------------------------------------------------------------------
 
+# (key, label, style, row)
 _CAT_BUTTONS = [
-    ("personnage", "🧑‍🤝‍🧑  Personnage",    discord.ButtonStyle.primary),
-    ("tirage",     "🃏  Tirage & Défis",  discord.ButtonStyle.primary),
-    ("meteo",      "🌤️  Météo",           discord.ButtonStyle.primary),
-    ("races",      "🗂️  Races",           discord.ButtonStyle.primary),
-    ("admin",      "🔒  Administration",  discord.ButtonStyle.secondary),
+    ("personnage",  "🧑‍🤝‍🧑  Personnage",    discord.ButtonStyle.primary,   0),
+    ("tirage",      "🃏  Tirage & Défis",  discord.ButtonStyle.primary,   0),
+    ("meteo",       "🌤️  Météo",           discord.ButtonStyle.primary,   0),
+    ("races",       "🗂️  Races",           discord.ButtonStyle.primary,   0),
+    ("confessions", "💬  Confessions",     discord.ButtonStyle.primary,   0),
+    ("admin",       "🔒  Administration",  discord.ButtonStyle.secondary, 1),
 ]
 
 
@@ -125,12 +140,13 @@ class HelpView(discord.ui.View):
 
     def _add_cat_buttons(self, active: str | None) -> None:
         self.clear_items()
-        for key, label, style in _CAT_BUTTONS:
+        for key, label, style, row in _CAT_BUTTONS:
             btn = discord.ui.Button(
                 label=label,
                 style=style,
                 custom_id=key,
                 disabled=(key == active),
+                row=row,
             )
             btn.callback = self._make_callback(key)
             self.add_item(btn)
@@ -139,7 +155,7 @@ class HelpView(discord.ui.View):
                 label="⬅  Retour",
                 style=discord.ButtonStyle.danger,
                 custom_id="back",
-                row=1,
+                row=2,
             )
             back.callback = self._back_callback
             self.add_item(back)

@@ -12,6 +12,9 @@ class GuildConfig:
     weather_hour: Optional[int] = None          # UTC hour (0–23)
     anniv_channel_id: Optional[str] = None
     anniv_hour: Optional[int] = None            # UTC hour (0–23)
+    confession_channel_id:     Optional[str] = None
+    confession_mod_channel_id: Optional[str] = None
+    confession_review_mode:    bool = False
     raw_config: dict = field(default_factory=dict)  # full JSONB, preserved on partial updates
 
     @classmethod
@@ -29,5 +32,8 @@ class GuildConfig:
             weather_hour=_hour("weather_hour"),
             anniv_channel_id=cfg.get("anniv_channel_id") or None,
             anniv_hour=_hour("anniv_hour"),
+            confession_channel_id=cfg.get("confession_channel_id") or None,
+            confession_mod_channel_id=cfg.get("confession_mod_channel_id") or None,
+            confession_review_mode=bool(cfg.get("confession_review_mode", False)),
             raw_config=cfg,
         )

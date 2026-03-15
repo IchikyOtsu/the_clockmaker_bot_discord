@@ -4,6 +4,7 @@ from datetime import date
 import discord
 
 from models.character import Character
+from models.confession import Confession, ConfessionReply
 from models.tirage import TirageCard, Defi, TirageLog
 from models.weather import WeatherType
 
@@ -16,7 +17,8 @@ COLOR_GOLD  = 0xC9A84C   # Or antique — profil
 COLOR_GREEN = 0x2ECC71   # Vert — confirmation création
 COLOR_DARK  = 0x1A1A2E   # Bleu nuit — neutre / switch / edit
 COLOR_RED   = 0xE74C3C   # Rouge — erreurs
-COLOR_SKY   = 0x5B8CDB   # Bleu ciel — météo
+COLOR_SKY        = 0x5B8CDB   # Bleu ciel — météo
+COLOR_CONFESSION = 0x5865F2   # Blurple Discord — confessions
 
 _URL_RE = re.compile(r"^https?://\S+$")
 
@@ -169,6 +171,66 @@ def birthday_embed(character: Character) -> discord.Embed:
     embed.set_footer(text=f"The Clockmaster • {today.strftime('%d/%m/%Y')}")
     return embed
 
+
+
+def confession_embed(confession: Confession) -> discord.Embed:
+    """Embed public posté dans le salon confessions."""
+    embed = discord.Embed(
+        title=f"Anonymous Confession (#{confession.number})",
+        description=confession.content,
+        color=COLOR_CONFESSION,
+    )
+    embed.set_footer(text="The Clockmaster")
+    return embed
+
+
+def confession_reply_embed(reply: ConfessionReply, confession_number: int) -> discord.Embed:
+    """Embed public pour une réponse anonyme."""
+    embed = discord.Embed(
+        title=f"↩️  Réponse à la confession #{confession_number}",
+        description=reply.content,
+        color=COLOR_CONFESSION,
+    )
+    embed.set_footer(text="Réponse anonyme • The Clockmaster")
+    return embed
+
+
+def confession_pending_embed(confession: Confession, channel_name: str = "") -> discord.Embed:
+    """Embed envoyé au salon modération quand review_mode est actif."""
+    title = f"Confession Awaiting Review"
+    if channel_name:
+        title += f" for #{channel_name}"
+    title += f" (#{confession.number})"
+    embed = discord.Embed(
+        title=title,
+        description=confession.content,
+        color=COLOR_DARK,
+    )
+    embed.add_field(
+        name="User",
+        value=f"<@{confession.discord_id}> (`{confession.discord_id}`)",
+        inline=False,
+    )
+    embed.set_footer(text="The Clockmaster")
+    return embed
+
+
+def confession_report_embed(confession: Confession, reporter_id: str) -> discord.Embed:
+    """Embed de signalement — visible uniquement dans le salon modération."""
+    embed = discord.Embed(title="🚨  Confession signalée", color=COLOR_RED)
+    embed.add_field(
+        name="Confession",
+        value=f"#{confession.number} (`{confession.short_id}`)",
+        inline=True,
+    )
+    embed.add_field(
+        name="Signalé par",
+        value=f"<@{reporter_id}> (`{reporter_id}`)",
+        inline=True,
+    )
+    embed.add_field(name="Contenu", value=confession.content, inline=False)
+    embed.set_footer(text="The Clockmaster")
+    return embed
 
 
 def weather_embed(weather: WeatherType, today: date, is_new: bool) -> discord.Embed:
