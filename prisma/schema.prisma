@@ -61,6 +61,17 @@ model Race {
   @@map("races")
 }
 
+/// Configuration JSON par serveur Discord.
+/// config JSONB : { "admin_role_ids": ["<id>", ...], ... }
+model GuildConfig {
+  guild_id   String   @id @db.Text
+  config     Json     @default("{}")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("guild_config")
+}
+
 /// Type de météo avec poids de probabilité (poids total = 100).
 model WeatherType {
   id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid

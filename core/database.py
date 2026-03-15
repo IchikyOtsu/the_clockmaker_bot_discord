@@ -6,6 +6,7 @@ from typing import Optional
 from supabase import acreate_client, AsyncClient
 
 from models.character import Character
+from models.guild_config import GuildConfig
 from models.race import Race
 from models.weather import WeatherType
 
@@ -293,3 +294,91 @@ class DatabaseClient:
             )
             .execute()
         )
+
+    # ------------------------------------------------------------------
+    # Guild config
+    # ------------------------------------------------------------------
+
+    async def get_guild_config(self, guild_id: str) -> GuildConfig | None:
+        result = await (
+            self._client.table("guild_config")
+            .select("*")
+            .eq("guild_id", guild_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return None
+        return GuildConfig.from_dict(result.data[0])
+
+    async def update_guild_config_keys(self, guild_id: str, updates: dict) -> GuildConfig:
+        """Merge updates into the existing guild config JSONB without overwriting other keys."""
+        existing = await self.get_guild_config(guild_id)
+        merged = {**(existing.raw_config if existing else {}), **updates}
+        result = await (
+            self._client.table("guild_config")
+            .upsert({"guild_id": guild_id, "config": merged}, on_conflict="guild_id")
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Impossible de sauvegarder la configuration.")
+        return GuildConfig.from_dict(result.data[0])
+
+    async def get_guilds_with_weather_config(self) -> list[GuildConfig]:
+        """Return all guilds that have both weather_channel_id and weather_hour set."""
+        result = await self._client.table("guild_config").select("*").execute()
+        configs = []
+        for row in result.data:
+            cfg = GuildConfig.from_dict(row)
+            if cfg.weather_channel_id and cfg.weather_hour is not None:
+                configs.append(cfg)
+        return configs
+
+    async def add_weather_type(
+        self, nom: str, description: str, emoji: str, poids: int
+    ) -> WeatherType:
+        result = await (
+            self._client.table("weather_types")
+            .insert(
+                {
+                    "nom": nom.strip(),
+                    "description": description.strip(),
+                    "emoji": emoji.strip(),
+                    "poids": poids,
+                }
+            )
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError(f"Impossible d'ajouter la météo « {nom} ».")
+        return WeatherType.from_dict(result.data[0])
+
+    async def delete_weather_type(self, short_id: str) -> WeatherType:
+        """Delete a weather type by its short ID (first 8 chars of UUID).
+        Also removes any weather_log entries referencing it."""
+        all_types = await self.get_all_weather_types()
+        matches = [w for w in all_types if str(w.id).startswith(short_id)]
+        if not matches:
+            raise DatabaseError(f"Aucune météo trouvée avec l'ID « {short_id} ».")
+        if len(matches) > 1:
+            raise DatabaseError(
+                f"Ambiguïté : plusieurs météos commencent par « {short_id} ». "
+                "Utilise plus de caractères."
+            )
+        target = matches[0]
+        # Remove log entries first (FK RESTRICT)
+        await (
+            self._client.table("weather_log")
+            .delete()
+            .eq("weather_id", str(target.id))
+            .execute()
+        )
+        result = await (
+            self._client.table("weather_types")
+            .delete()
+            .eq("id", str(target.id))
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Échec de la suppression.")
+        return target

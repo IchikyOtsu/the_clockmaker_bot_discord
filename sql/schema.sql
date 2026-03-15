@@ -83,6 +83,32 @@ END;
 $$;
 
 -- =============================================================
+-- Guild configuration (JSONB — extensible pour les futures options)
+-- =============================================================
+
+CREATE TABLE IF NOT EXISTS guild_config (
+    guild_id   TEXT        PRIMARY KEY,
+    config     JSONB       NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+DROP TRIGGER IF EXISTS guild_config_updated_at ON guild_config;
+CREATE TRIGGER guild_config_updated_at
+    BEFORE UPDATE ON guild_config
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+ALTER TABLE guild_config ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "public read guild_config"   ON guild_config FOR SELECT USING (true);
+CREATE POLICY "service write guild_config" ON guild_config FOR ALL    USING (true);
+
+-- Initialisation : remplace YOUR_GUILD_ID par l'ID de ton serveur Discord
+-- INSERT INTO guild_config (guild_id, config) VALUES (
+--     'YOUR_GUILD_ID',
+--     '{"admin_role_ids": ["1192218296142024779", "1192218296179769404"]}'
+-- ) ON CONFLICT (guild_id) DO UPDATE SET config = EXCLUDED.config;
+
+-- =============================================================
 -- Weather system
 -- =============================================================
 
