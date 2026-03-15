@@ -173,6 +173,36 @@ class ConfessionPublicView(discord.ui.View):
         await interaction.response.send_modal(ReplyModal(self._cog, confession))
 
 
+# ---------------------------------------------------------------------------
+# ReplyPublicView — bouton Reply persistant sur chaque message de réponse
+# ---------------------------------------------------------------------------
+
+class ReplyPublicView(discord.ui.View):
+    """Bouton Reply attaché à chaque réponse dans le fil."""
+
+    def __init__(self, cog: ConfessionsCog, confession_id: str) -> None:
+        super().__init__(timeout=None)
+        self._cog = cog
+        self._confession_id = confession_id
+        self.reply_btn.custom_id = f"conf_rp:{confession_id}"
+
+    @discord.ui.button(
+        label="Reply",
+        style=discord.ButtonStyle.secondary,
+        custom_id="conf_rp:placeholder",
+    )
+    async def reply_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        confession = await self._cog.db.get_confession_by_id(self._confession_id)
+        if not confession or confession.status != "posted":
+            await interaction.response.send_message(
+                embed=error_embed("Cette confession n'est plus accessible."), ephemeral=True
+            )
+            return
+        await interaction.response.send_modal(ReplyModal(self._cog, confession))
+
+
 class DenyReplyWithReasonModal(discord.ui.Modal, title="Rejeter la réponse"):
     reason = discord.ui.TextInput(
         label="Raison du rejet (envoyée à l'auteur)",
@@ -395,6 +425,7 @@ class ConfessionsCog(commands.Cog):
         posted = await self.db.get_posted_confessions()
         for confession in posted:
             self.bot.add_view(ConfessionPublicView(self, str(confession.id)))
+            self.bot.add_view(ReplyPublicView(self, str(confession.id)))
         pending_replies = await self.db.get_pending_replies()
         for reply in pending_replies:
             self.bot.add_view(ReplyReviewView(self, str(reply.id)))
@@ -622,7 +653,9 @@ class ConfessionsCog(commands.Cog):
             )
             return
 
-        msg = await thread.send(embed=confession_reply_embed(reply, confession.number))
+        reply_view = ReplyPublicView(self, str(confession.id))
+        msg = await thread.send(embed=confession_reply_embed(reply, confession.number), view=reply_view)
+        self.bot.add_view(reply_view)
         await self.db.update_reply_status(str(reply.id), "posted", message_id=str(msg.id))
         await interaction.response.send_message(
             embed=discord.Embed(
@@ -660,7 +693,9 @@ class ConfessionsCog(commands.Cog):
             )
             return
 
-        msg = await thread.send(embed=confession_reply_embed(reply, confession.number))
+        reply_view = ReplyPublicView(self, str(confession.id))
+        msg = await thread.send(embed=confession_reply_embed(reply, confession.number), view=reply_view)
+        self.bot.add_view(reply_view)
         await self.db.update_reply_status(reply_id, "posted", message_id=str(msg.id))
 
         cfg = await self.db.get_guild_config(str(interaction.guild_id))
