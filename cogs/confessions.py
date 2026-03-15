@@ -173,8 +173,43 @@ class ConfessionPublicView(discord.ui.View):
         await interaction.response.send_modal(ReplyModal(self._cog, confession))
 
 
+class DenyReplyWithReasonModal(discord.ui.Modal, title="Rejeter la réponse"):
+    reason = discord.ui.TextInput(
+        label="Raison du rejet (envoyée à l'auteur)",
+        style=discord.TextStyle.paragraph,
+        max_length=500,
+        placeholder="Explique pourquoi cette réponse est refusée…",
+    )
+
+    def __init__(
+        self,
+        cog: ConfessionsCog,
+        reply_id: str,
+        original_message: discord.Message,
+    ) -> None:
+        super().__init__()
+        self._cog = cog
+        self._reply_id = reply_id
+        self._original_message = original_message
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer()
+        await self._cog._handle_reply_deny(
+            interaction,
+            self._reply_id,
+            reason=str(self.reason),
+            original_message=self._original_message,
+        )
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
+        traceback.print_exc()
+        await interaction.response.send_message(
+            embed=error_embed("Une erreur est survenue."), ephemeral=True
+        )
+
+
 # ---------------------------------------------------------------------------
-# ReplyReviewView — persistent, boutons de modération pour les réponses
+# ReplyReviewView — persistent, 5 boutons de modération pour les réponses
 # ---------------------------------------------------------------------------
 
 class ReplyReviewView(discord.ui.View):
@@ -184,9 +219,11 @@ class ReplyReviewView(discord.ui.View):
         super().__init__(timeout=None)
         self._cog = cog
         self._reply_id = reply_id
-        self.approve_btn.custom_id  = f"conf_ra:{reply_id}"
-        self.deny_btn.custom_id     = f"conf_rd:{reply_id}"
-        self.deny_ban_btn.custom_id = f"conf_rdb:{reply_id}"
+        self.approve_btn.custom_id      = f"conf_ra:{reply_id}"
+        self.deny_btn.custom_id         = f"conf_rd:{reply_id}"
+        self.deny_reason_btn.custom_id  = f"conf_rdr:{reply_id}"
+        self.deny_ban_btn.custom_id     = f"conf_rdb:{reply_id}"
+        self.deny_report_btn.custom_id  = f"conf_rdreport:{reply_id}"
 
     @discord.ui.button(
         label="Approve",
@@ -210,6 +247,19 @@ class ReplyReviewView(discord.ui.View):
         await self._cog._handle_reply_deny(interaction, self._reply_id)
 
     @discord.ui.button(
+        label="Deny with reason",
+        style=discord.ButtonStyle.danger,
+        custom_id="conf_rdr:placeholder",
+        emoji="💬",
+    )
+    async def deny_reason_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await interaction.response.send_modal(
+            DenyReplyWithReasonModal(self._cog, self._reply_id, interaction.message)
+        )
+
+    @discord.ui.button(
         label="Deny & confessban",
         style=discord.ButtonStyle.danger,
         custom_id="conf_rdb:placeholder",
@@ -219,6 +269,17 @@ class ReplyReviewView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self._cog._handle_reply_deny(interaction, self._reply_id, also_ban=True)
+
+    @discord.ui.button(
+        label="Deny & report",
+        style=discord.ButtonStyle.danger,
+        custom_id="conf_rdreport:placeholder",
+        emoji="⚠️",
+    )
+    async def deny_report_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self._cog._handle_reply_deny(interaction, self._reply_id, also_report=True)
 
 
 # ---------------------------------------------------------------------------
@@ -461,13 +522,23 @@ class ConfessionsCog(commands.Cog):
             return None
         channel = self.bot.get_channel(int(confession.channel_id))
         if channel is None:
-            return None
+            try:
+                channel = await self.bot.fetch_channel(int(confession.channel_id))
+            except (discord.NotFound, discord.HTTPException):
+                return None
         try:
             msg = await channel.fetch_message(int(confession.message_id))
         except (discord.NotFound, discord.HTTPException):
             return None
         if msg.thread:
-            return msg.thread
+            thread = msg.thread
+            # Désarchiver si nécessaire
+            if thread.archived:
+                try:
+                    await thread.edit(archived=False)
+                except discord.HTTPException:
+                    pass
+            return thread
         try:
             return await msg.create_thread(
                 name=f"Confession Replies (#{confession.number})",
@@ -610,29 +681,46 @@ class ConfessionsCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         reply_id: str,
+        reason: str | None = None,
         also_ban: bool = False,
+        also_report: bool = False,
+        original_message: discord.Message | None = None,
     ) -> None:
         reply = await self.db.get_confession_reply_by_id(reply_id)
         if not reply:
-            await interaction.response.send_message(
-                embed=error_embed("Réponse introuvable."), ephemeral=True
-            )
+            if original_message:
+                await original_message.edit(embed=error_embed("Réponse introuvable."), view=None)
+            else:
+                await interaction.response.send_message(
+                    embed=error_embed("Réponse introuvable."), ephemeral=True
+                )
             return
 
         confession = await self.db.get_confession_by_id(str(reply.confession_id))
         await self.db.delete_confession_reply(reply_id)
+
+        cfg = await self.db.get_guild_config(str(interaction.guild_id))
+        channel_name = await self._get_channel_name(cfg) if cfg else ""
 
         if also_ban:
             await self.db.ban_confessor(
                 reply.guild_id, reply.discord_id, str(interaction.user.id)
             )
 
-        cfg = await self.db.get_guild_config(str(interaction.guild_id))
-        channel_name = await self._get_channel_name(cfg) if cfg else ""
+        if also_report and cfg and cfg.confession_mod_channel_id:
+            mod_channel = self.bot.get_channel(int(cfg.confession_mod_channel_id))
+            if mod_channel and confession:
+                await mod_channel.send(
+                    embed=confession_report_embed(confession, reply.discord_id)
+                )
 
-        action = f"❌ Rejetée par {interaction.user}"
+        action_parts = [f"❌ Rejetée par {interaction.user}"]
+        if reason:
+            action_parts.append("raison envoyée")
         if also_ban:
-            action += " • utilisateur banni"
+            action_parts.append("utilisateur banni")
+        if also_report:
+            action_parts.append("signalement envoyé")
 
         if confession:
             denied_embed = confession_reply_pending_embed(reply, confession, channel_name=channel_name)
@@ -642,10 +730,16 @@ class ConfessionsCog(commands.Cog):
                 description=reply.content,
                 color=COLOR_DARK,
             )
-        denied_embed.set_footer(text=f"{action} • The Clockmaster")
-        await interaction.response.edit_message(embed=denied_embed, view=None)
+        denied_embed.set_footer(text=" • ".join(action_parts) + " • The Clockmaster")
+
+        if original_message:
+            await original_message.edit(embed=denied_embed, view=None)
+        else:
+            await interaction.response.edit_message(embed=denied_embed, view=None)
 
         dm_msg = "Ta réponse à une confession a été refusée par les modérateurs."
+        if reason:
+            dm_msg += f"\n\n**Raison :** {reason}"
         if also_ban:
             dm_msg += "\nTu as également été banni(e) des confessions sur ce serveur."
         try:
