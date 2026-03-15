@@ -60,3 +60,31 @@ model Race {
 
   @@map("races")
 }
+
+/// Type de météo avec poids de probabilité (poids total = 100).
+model WeatherType {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nom         String       @unique @db.Text
+  description String       @db.Text
+  emoji       String       @db.Text
+  poids       Int
+  created_at  DateTime     @default(now()) @db.Timestamptz(6)
+
+  weatherLogs WeatherLog[]
+
+  @@map("weather_types")
+}
+
+/// Météo du jour par guilde. Une seule entrée par (guild_id, date).
+model WeatherLog {
+  id         String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  guild_id   String      @db.Text
+  date       DateTime    @db.Date
+  weather_id String      @db.Uuid
+  created_at DateTime    @default(now()) @db.Timestamptz(6)
+
+  weatherType WeatherType @relation(fields: [weather_id], references: [id])
+
+  @@unique([guild_id, date])
+  @@map("weather_log")
+}

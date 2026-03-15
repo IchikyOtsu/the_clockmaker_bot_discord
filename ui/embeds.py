@@ -1,12 +1,17 @@
 import re
+from datetime import date
+
 import discord
+
 from models.character import Character
+from models.weather import WeatherType
 
 # Palette de couleurs
 COLOR_GOLD  = 0xC9A84C   # Or antique — profil
 COLOR_GREEN = 0x2ECC71   # Vert — confirmation création
 COLOR_DARK  = 0x1A1A2E   # Bleu nuit — neutre / switch / edit
 COLOR_RED   = 0xE74C3C   # Rouge — erreurs
+COLOR_SKY   = 0x5B8CDB   # Bleu ciel — météo
 
 _URL_RE = re.compile(r"^https?://\S+$")
 
@@ -97,3 +102,17 @@ def switch_embed(character: Character) -> discord.Embed:
 def error_embed(message: str) -> discord.Embed:
     """Embed d'erreur générique (toujours envoyé en éphémère)."""
     return discord.Embed(title="Erreur", description=message, color=COLOR_RED)
+
+
+def weather_embed(weather: WeatherType, today: date, is_new: bool) -> discord.Embed:
+    """Embed météo du jour pour /meteo."""
+    embed = discord.Embed(
+        title=f"{weather.emoji}  Météo du {today.strftime('%d/%m/%Y')}",
+        description=weather.description,
+        color=COLOR_SKY,
+    )
+    embed.add_field(name="Type",          value=f"{weather.emoji} {weather.nom}", inline=True)
+    embed.add_field(name="Probabilité",   value=f"{weather.poids} %",            inline=True)
+    footer = "Fraîchement générée • The Clockmaster" if is_new else "Météo du jour • The Clockmaster"
+    embed.set_footer(text=footer)
+    return embed

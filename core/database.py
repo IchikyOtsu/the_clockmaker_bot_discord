@@ -1,8 +1,13 @@
 from __future__ import annotations
+
+from datetime import date
 from typing import Optional
+
 from supabase import acreate_client, AsyncClient
+
 from models.character import Character
 from models.race import Race
+from models.weather import WeatherType
 
 
 class DatabaseError(Exception):
@@ -241,3 +246,50 @@ class DatabaseClient:
         if not result.data:
             raise RaceNotFound(f"Race introuvable : « {nom} ».")
         return Race.from_dict(result.data[0])
+
+    # ------------------------------------------------------------------
+    # Weather
+    # ------------------------------------------------------------------
+
+    async def get_today_weather(self, guild_id: str) -> WeatherType | None:
+        """Return today's weather for the guild if already generated, else None."""
+        log = await (
+            self._client.table("weather_log")
+            .select("weather_id")
+            .eq("guild_id", guild_id)
+            .eq("date", date.today().isoformat())
+            .limit(1)
+            .execute()
+        )
+        if not log.data:
+            return None
+        wt = await (
+            self._client.table("weather_types")
+            .select("*")
+            .eq("id", log.data[0]["weather_id"])
+            .limit(1)
+            .execute()
+        )
+        if not wt.data:
+            return None
+        return WeatherType.from_dict(wt.data[0])
+
+    async def get_all_weather_types(self) -> list[WeatherType]:
+        result = await self._client.table("weather_types").select("*").execute()
+        return [WeatherType.from_dict(r) for r in result.data]
+
+    async def log_weather(self, guild_id: str, weather_type: WeatherType) -> None:
+        """Insert today's weather for the guild. Silently ignores duplicate (race condition)."""
+        await (
+            self._client.table("weather_log")
+            .upsert(
+                {
+                    "guild_id": guild_id,
+                    "weather_id": str(weather_type.id),
+                    "date": date.today().isoformat(),
+                },
+                on_conflict="guild_id,date",
+                ignore_duplicates=True,
+            )
+            .execute()
+        )

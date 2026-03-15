@@ -82,6 +82,57 @@ BEGIN
 END;
 $$;
 
+-- =============================================================
+-- Weather system
+-- =============================================================
+
+-- Weather types: probability table (poids total = 100)
+CREATE TABLE IF NOT EXISTS weather_types (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    nom         TEXT        NOT NULL UNIQUE,
+    description TEXT        NOT NULL,
+    emoji       TEXT        NOT NULL,
+    poids       INT         NOT NULL CHECK (poids > 0),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Daily weather log per guild (one row per guild per day)
+CREATE TABLE IF NOT EXISTS weather_log (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    guild_id    TEXT        NOT NULL,
+    date        DATE        NOT NULL DEFAULT CURRENT_DATE,
+    weather_id  UUID        NOT NULL REFERENCES weather_types(id) ON DELETE RESTRICT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (guild_id, date)
+);
+
+-- RLS
+ALTER TABLE weather_types ENABLE ROW LEVEL SECURITY;
+ALTER TABLE weather_log   ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "public read weather_types"  ON weather_types FOR SELECT USING (true);
+CREATE POLICY "service write weather_types" ON weather_types FOR ALL USING (true);
+CREATE POLICY "public read weather_log"    ON weather_log   FOR SELECT USING (true);
+CREATE POLICY "service write weather_log"  ON weather_log   FOR ALL USING (true);
+
+-- Default weather types (poids total = 100)
+INSERT INTO weather_types (nom, description, emoji, poids) VALUES
+    ('Ensoleillé',    'Le soleil brille sur les toits de la ville, réchauffant les pavés et les cœurs.', '☀️', 20),
+    ('Nuageux',       'Un ciel lourd de nuages gris filtre la lumière du jour sans la bloquer tout à fait.', '⛅', 18),
+    ('Pluvieux',      'Une pluie froide et persistante s''abat sur la ville, noyant les ruelles dans un silence humide.', '🌧️', 15),
+    ('Brumeux',       'Un épais brouillard enveloppe les rues, effaçant les silhouettes lointaines.', '🌫️', 12),
+    ('Venteux',       'Des rafales sèches balaient les places, arrachant chapeaux et capes au passage.', '💨', 10),
+    ('Orageux',       'Le tonnerre gronde dans les hauteurs. L''air sent la poudre et l''électricité.', '⛈️', 8),
+    ('Neigeux',       'Des flocons silencieux recouvrent la ville d''un manteau blanc et fragile.', '❄️', 7),
+    ('Tempête',       'Une tempête violente secoue les volets et couche les arbres sur son passage.', '🌪️', 5),
+    ('Canicule',      'Une chaleur étouffante écrase la ville. L''air tremble au-dessus des toits de pierre.', '🔥', 4),
+    ('Nuit étoilée',  'Un ciel sans nuage dévoile un tapis d''étoiles d''une clarté exceptionnelle.', '🌟', 1)
+ON CONFLICT (nom) DO NOTHING;
+
+-- =============================================================
+-- Default races
+-- =============================================================
+
 -- Default races
 INSERT INTO races (nom) VALUES
     ('Humain'),
