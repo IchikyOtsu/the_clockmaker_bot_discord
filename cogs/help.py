@@ -32,6 +32,14 @@ class HelpCog(commands.Cog):
         )
 
         embed.add_field(
+            name="🃏  Tarokka",
+            value=_field([
+                ("/tarokka [carte]", "Consulter le deck Tarokka (carte aléatoire ou recherche)"),
+            ]),
+            inline=False,
+        )
+
+        embed.add_field(
             name="🌤️  Météo",
             value=_field([
                 ("/meteo",      "Météo du jour"),

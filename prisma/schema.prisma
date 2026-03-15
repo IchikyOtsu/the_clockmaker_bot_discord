@@ -61,6 +61,31 @@ model Race {
   @@map("races")
 }
 
+/// Correspondance image ↔ signification du deck Tarokka.
+/// Images dans Supabase Storage bucket "tarroka" : tarokka deck_0001.jpg … 0040.jpg
+model TarokkaSuit {
+  id          String        @id @db.Text     // 'stars' | 'swords' | 'coins' | 'glyphs'
+  name        String        @db.Text
+  description String        @db.Text
+
+  cards TarokkaCard[]
+
+  @@map("tarokka_suits")
+}
+
+model TarokkaCard {
+  image_num  Int    @id                      // 1–40
+  suit_id    String @db.Text
+  position   Int                             // 0 = Master, 1–9
+  card_label String @db.Text                // "Master of Stars", "One of Stars"…
+  card_name  String @db.Text                // "Wizard", "Transmuter"…
+  represents String @db.Text
+
+  suit TarokkaSuit @relation(fields: [suit_id], references: [id])
+
+  @@map("tarokka_cards")
+}
+
 /// Log des souhaits d'anniversaire — une entrée par (personnage, année).
 /// Évite les doublons si le bot redémarre ou si la commande est appelée plusieurs fois.
 model BirthdayLog {

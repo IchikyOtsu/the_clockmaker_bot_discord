@@ -8,6 +8,7 @@ from supabase import acreate_client, AsyncClient
 from models.character import Character
 from models.guild_config import GuildConfig
 from models.race import Race
+from models.tarokka import TarokkaCard
 from models.weather import WeatherType
 
 
@@ -375,6 +376,46 @@ class DatabaseClient:
             .execute()
         )
         return len(result.data) > 0
+
+    # ------------------------------------------------------------------
+    # Tarokka
+    # ------------------------------------------------------------------
+
+    async def get_tarokka_card(self, image_num: int) -> TarokkaCard | None:
+        result = await (
+            self._client.table("tarokka_cards")
+            .select("*, tarokka_suits(*)")
+            .eq("image_num", image_num)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return None
+        return TarokkaCard.from_dict(result.data[0])
+
+    async def get_random_tarokka_card(self) -> TarokkaCard | None:
+        import random as _random
+        result = await (
+            self._client.table("tarokka_cards")
+            .select("*, tarokka_suits(*)")
+            .execute()
+        )
+        if not result.data:
+            return None
+        return TarokkaCard.from_dict(_random.choice(result.data))
+
+    async def get_all_tarokka_cards(self) -> list[TarokkaCard]:
+        result = await (
+            self._client.table("tarokka_cards")
+            .select("*, tarokka_suits(*)")
+            .order("image_num")
+            .execute()
+        )
+        return [TarokkaCard.from_dict(r) for r in result.data]
+
+    # ------------------------------------------------------------------
+    # Birthdays
+    # ------------------------------------------------------------------
 
     async def log_birthday_wish(self, character_id: str, year: int) -> None:
         """Mark a character's birthday as wished for the given year (idempotent)."""

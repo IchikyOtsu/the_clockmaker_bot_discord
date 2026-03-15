@@ -109,6 +109,35 @@ CREATE POLICY "service write guild_config" ON guild_config FOR ALL    USING (tru
 -- ) ON CONFLICT (guild_id) DO UPDATE SET config = EXCLUDED.config;
 
 -- =============================================================
+-- Tarokka deck — correspondence table (global, no guild scope)
+-- Images in Supabase Storage bucket "tarroka": tarokka deck_0001.jpg … 0040.jpg
+-- =============================================================
+
+CREATE TABLE IF NOT EXISTS tarokka_suits (
+    id          TEXT        PRIMARY KEY,  -- 'stars' | 'swords' | 'coins' | 'glyphs'
+    name        TEXT        NOT NULL,
+    description TEXT        NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tarokka_cards (
+    image_num   INT         PRIMARY KEY CHECK (image_num BETWEEN 1 AND 40),
+    suit_id     TEXT        NOT NULL REFERENCES tarokka_suits(id),
+    position    INT         NOT NULL CHECK (position BETWEEN 0 AND 9),
+    card_label  TEXT        NOT NULL,  -- 'Master of Stars', 'One of Stars', etc.
+    card_name   TEXT        NOT NULL,  -- 'Wizard', 'Transmuter', etc.
+    represents  TEXT        NOT NULL
+);
+
+ALTER TABLE tarokka_suits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tarokka_cards ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "public read tarokka_suits"   ON tarokka_suits FOR SELECT USING (true);
+CREATE POLICY "service write tarokka_suits" ON tarokka_suits FOR ALL    USING (true);
+CREATE POLICY "public read tarokka_cards"   ON tarokka_cards FOR SELECT USING (true);
+CREATE POLICY "service write tarokka_cards" ON tarokka_cards FOR ALL    USING (true);
+
+-- Seed data is in sql/tarokka_seed.sql — run it separately after this file.
+
+-- =============================================================
 -- Birthday log — one row per (character, year) to avoid duplicate wishes
 -- =============================================================
 

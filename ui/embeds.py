@@ -4,7 +4,15 @@ from datetime import date
 import discord
 
 from models.character import Character
+from models.tarokka import TarokkaCard
 from models.weather import WeatherType
+
+_SUIT_COLORS: dict[str, int] = {
+    "stars":  0x7B68EE,   # Violet arcane
+    "swords": 0xC0392B,   # Rouge sang
+    "coins":  0xC9A84C,   # Or
+    "glyphs": 0x27AE60,   # Vert foi
+}
 
 COLOR_PINK  = 0xFF85A1   # Rose — anniversaires
 
@@ -104,6 +112,21 @@ def switch_embed(character: Character) -> discord.Embed:
 def error_embed(message: str) -> discord.Embed:
     """Embed d'erreur générique (toujours envoyé en éphémère)."""
     return discord.Embed(title="Erreur", description=message, color=COLOR_RED)
+
+
+def tarokka_embed(card: TarokkaCard, total: int = 40) -> discord.Embed:
+    """Embed d'affichage d'une carte Tarokka avec son image."""
+    color = _SUIT_COLORS.get(card.suit_id, COLOR_DARK)
+    embed = discord.Embed(
+        title=f"{card.card_label}  —  {card.card_name}",
+        description=f"*{card.represents}*",
+        color=color,
+    )
+    embed.add_field(name="Suite", value=card.suit_name, inline=True)
+    embed.add_field(name="Carte", value=f"{card.image_num} / {total}", inline=True)
+    embed.set_image(url=card.image_url)
+    embed.set_footer(text=f"Tarokka • {card.suit_name} — {card.suit_description[:120]}…")
+    return embed
 
 
 def birthday_embed(character: Character) -> discord.Embed:
