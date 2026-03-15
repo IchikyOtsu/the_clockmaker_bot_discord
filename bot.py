@@ -36,7 +36,10 @@ class ClockMasterBot(commands.Bot):
             guild = discord.Object(id=config.DEV_GUILD_ID)
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
-            print(f"[sync] Commandes synchronisées sur le serveur ({config.DEV_GUILD_ID})")
+            # Remove any previously registered global commands
+            self.tree.clear_commands(guild=None)
+            await self.tree.sync()
+            print(f"[sync] Commandes synchronisées sur le serveur ({config.DEV_GUILD_ID}), commandes globales supprimées")
         else:
             await self.tree.sync()
             print("[sync] Commandes synchronisées globalement (peut prendre jusqu'à 1h)")
