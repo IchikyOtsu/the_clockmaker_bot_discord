@@ -1,130 +1,37 @@
 from __future__ import annotations
 
-import random
 from typing import Optional
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core.database import DatabaseClient
-from models.tarokka import TarokkaCard
-from ui.embeds import (
-    error_embed,
-    tarokka_embed,
-    tirage_summary_embed,
-    tirage_card_embed,
-    _READING_POSITIONS,
-)
+from core.database import DatabaseClient, DatabaseError
+from models.tirage import TirageCard, Defi, TirageLog
+from ui.embeds import error_embed, tirage_embed, mon_defi_embed
 
 
 # ---------------------------------------------------------------------------
-# TarokkaView — browse all cards (existing /tarokka command)
-# ---------------------------------------------------------------------------
-
-class TarokkaView(discord.ui.View):
-    """Navigation ◀ ▶ + close button. Only the original user can interact."""
-
-    def __init__(
-        self,
-        cards: list[TarokkaCard],
-        start_index: int,
-        author_id: int,
-    ) -> None:
-        super().__init__(timeout=180)
-        self._cards = cards
-        self._index = start_index
-        self._author_id = author_id
-        self.message: Optional[discord.WebhookMessage] = None
-        self._update_buttons()
-
-    def _update_buttons(self) -> None:
-        self.prev_btn.disabled = self._index == 0
-        self.next_btn.disabled = self._index == len(self._cards) - 1
-
-    def _current_embed(self) -> discord.Embed:
-        return tarokka_embed(self._cards[self._index], total=len(self._cards))
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self._author_id:
-            await interaction.response.send_message(
-                "Ce n'est pas ta consultation.", ephemeral=True
-            )
-            return False
-        return True
-
-    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
-    async def prev_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        self._index -= 1
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self._current_embed(), view=self)
-
-    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
-    async def next_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        self._index += 1
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self._current_embed(), view=self)
-
-    @discord.ui.button(label="✖", style=discord.ButtonStyle.danger)
-    async def close_btn(
-        self, interaction: discord.Interaction, button: discord.ui.Button
-    ) -> None:
-        await interaction.response.edit_message(
-            content="*(consultation fermée)*", embed=None, view=None
-        )
-        self.stop()
-
-    async def on_timeout(self) -> None:
-        if self.message:
-            try:
-                await self.message.edit(
-                    content="*(consultation expirée)*", embed=None, view=None
-                )
-            except discord.NotFound:
-                pass
-
-
-# ---------------------------------------------------------------------------
-# TirageView — display a 5-card reading
+# TirageView — boutons Accepter / Refuser sur le message public de tirage
 # ---------------------------------------------------------------------------
 
 class TirageView(discord.ui.View):
-    """
-    Page 0 = summary of all 5 positions.
-    Pages 1–5 = individual card details with image.
-    Only the user who triggered the reading may interact.
-    """
+    """Attached to the public draw message. Only the drawing user can interact."""
 
-    def __init__(self, cards: list[TarokkaCard], author_id: int) -> None:
+    def __init__(
+        self,
+        db: DatabaseClient,
+        card: TirageCard,
+        defi: Defi,
+        log: TirageLog,
+        author_id: int,
+    ) -> None:
         super().__init__(timeout=300)
-        self._cards = cards      # always 5 cards in reading order
-        self._page = 0           # 0 = overview, 1–5 = card detail
+        self._db = db
+        self._card = card
+        self._defi = defi
+        self._log = log
         self._author_id = author_id
-        self.message: Optional[discord.WebhookMessage] = None
-        self._update_buttons()
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def _update_buttons(self) -> None:
-        self.prev_btn.disabled = self._page == 0
-        self.next_btn.disabled = self._page == len(self._cards)
-
-    def _current_embed(self) -> discord.Embed:
-        if self._page == 0:
-            return tirage_summary_embed(self._cards)
-        card = self._cards[self._page - 1]
-        pos_label = _READING_POSITIONS[self._page - 1]
-        return tirage_card_embed(card, pos_label, self._page)
-
-    # ------------------------------------------------------------------
-    # Guard
-    # ------------------------------------------------------------------
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self._author_id:
@@ -134,50 +41,86 @@ class TirageView(discord.ui.View):
             return False
         return True
 
-    # ------------------------------------------------------------------
-    # Buttons
-    # ------------------------------------------------------------------
-
-    @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
-    async def prev_btn(
+    @discord.ui.button(label="✅  Accepter le défi", style=discord.ButtonStyle.success)
+    async def accept_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        self._page -= 1
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self._current_embed(), view=self)
+        # Log is already saved as 'active' — just remove the buttons
+        self.stop()
+        embed = tirage_embed(self._card, self._defi)
+        embed.set_footer(text="Défi accepté ! Utilise /mon-defi pour le consulter • The Clockmaster")
+        await interaction.response.edit_message(embed=embed, view=None)
 
-    @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
-    async def next_btn(
+    @discord.ui.button(label="❌  Refuser", style=discord.ButtonStyle.danger)
+    async def refuse_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        self._page += 1
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self._current_embed(), view=self)
+        await self._db.refuse_tirage(str(self._log.id))
+        self.stop()
+        embed = discord.Embed(
+            title="Tirage refusé",
+            description="Tu as refusé ce défi. Tu ne pourras pas retirer aujourd'hui.",
+            color=0x636363,
+        )
+        embed.set_footer(text="The Clockmaster")
+        await interaction.response.edit_message(embed=embed, view=None)
 
-    @discord.ui.button(label="✖", style=discord.ButtonStyle.danger)
+    async def on_timeout(self) -> None:
+        # Log stays 'active' — player can still see it via /mon-defi
+        pass
+
+
+# ---------------------------------------------------------------------------
+# MonDefiView — boutons Fermer / Valider sur le message éphémère /mon-defi
+# ---------------------------------------------------------------------------
+
+class MonDefiView(discord.ui.View):
+    """Ephemeral view for /mon-defi with close and validate buttons."""
+
+    def __init__(self, db: DatabaseClient, log: TirageLog, card: TirageCard, defi: Defi) -> None:
+        super().__init__(timeout=180)
+        self._db = db
+        self._log = log
+        self._card = card
+        self._defi = defi
+
+    @discord.ui.button(label="✅  Valider mon défi", style=discord.ButtonStyle.success)
+    async def validate_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        try:
+            await self._db.validate_tirage(
+                self._log.guild_id, self._log.discord_id
+            )
+        except DatabaseError as exc:
+            await interaction.response.send_message(
+                embed=error_embed(str(exc)), ephemeral=True
+            )
+            return
+        self.stop()
+        embed = discord.Embed(
+            title="✅  Défi validé !",
+            description="Bravo ! Tu pourras tirer à nouveau demain.",
+            color=0x2ECC71,
+        )
+        embed.set_footer(text="The Clockmaster")
+        await interaction.response.edit_message(embed=embed, view=None)
+
+    @discord.ui.button(label="✖  Fermer", style=discord.ButtonStyle.secondary)
     async def close_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        await interaction.response.edit_message(
-            content="*(tirage fermé)*", embed=None, view=None
-        )
         self.stop()
-
-    async def on_timeout(self) -> None:
-        if self.message:
-            try:
-                await self.message.edit(
-                    content="*(tirage expiré)*", embed=None, view=None
-                )
-            except discord.NotFound:
-                pass
+        await interaction.response.edit_message(
+            content="*(fermé)*", embed=None, view=None
+        )
 
 
 # ---------------------------------------------------------------------------
 # Cog
 # ---------------------------------------------------------------------------
 
-class TarokkaCog(commands.Cog):
+class TirageCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -187,123 +130,87 @@ class TarokkaCog(commands.Cog):
         return self.bot.db  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------
-    # /tarokka — browse the full deck
-    # ------------------------------------------------------------------
-
-    @app_commands.command(
-        name="tarokka",
-        description="Consulter les cartes du deck Tarokka.",
-    )
-    @app_commands.describe(
-        carte="Nom ou numéro de carte (laisser vide pour commencer depuis la première)"
-    )
-    async def tarokka(
-        self,
-        interaction: discord.Interaction,
-        carte: Optional[str] = None,
-    ) -> None:
-        await interaction.response.defer(ephemeral=True)
-
-        cards = await self.db.get_all_tarokka_cards()
-        if not cards:
-            await interaction.followup.send(
-                embed=error_embed("Le deck Tarokka n'est pas encore chargé en base."),
-                ephemeral=True,
-            )
-            return
-
-        if carte is None:
-            start = 0
-        else:
-            start = None
-            if carte.isdigit():
-                num = int(carte)
-                for i, c in enumerate(cards):
-                    if c.image_num == num:
-                        start = i
-                        break
-            if start is None:
-                needle = carte.lower()
-                for i, c in enumerate(cards):
-                    if needle in c.card_name.lower() or needle in c.card_label.lower():
-                        start = i
-                        break
-            if start is None:
-                await interaction.followup.send(
-                    embed=error_embed(f"Carte introuvable : « {carte} »."),
-                    ephemeral=True,
-                )
-                return
-
-        view = TarokkaView(cards, start_index=start, author_id=interaction.user.id)
-        msg = await interaction.followup.send(
-            embed=tarokka_embed(cards[start], total=len(cards)),
-            view=view,
-            ephemeral=True,
-            wait=True,
-        )
-        view.message = msg
-
-    @tarokka.autocomplete("carte")
-    async def carte_autocomplete(
-        self, interaction: discord.Interaction, current: str
-    ) -> list[app_commands.Choice[str]]:
-        cards = await self.db.get_all_tarokka_cards()
-        needle = current.lower()
-        return [
-            app_commands.Choice(
-                name=f"{c.image_num:02d}. {c.card_label} — {c.card_name}",
-                value=str(c.image_num),
-            )
-            for c in cards
-            if not needle
-            or needle in c.card_name.lower()
-            or needle in c.card_label.lower()
-            or needle in c.suit_name.lower()
-            or needle == str(c.image_num)
-        ][:25]
-
-    # ------------------------------------------------------------------
-    # /tirage — 5-card reading (3 common + 2 high deck)
+    # /tirage — tirer une carte + recevoir un défi
     # ------------------------------------------------------------------
 
     @app_commands.command(
         name="tirage",
-        description="Effectuer un tirage Tarokka : 3 cartes communes + 2 Haut Deck.",
+        description="Tirer une carte et recevoir un défi du jour (1 tirage par jour).",
     )
     async def tirage(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer()
+        guild_id = str(interaction.guild_id)
+        discord_id = str(interaction.user.id)
 
-        all_cards = await self.db.get_all_tarokka_cards()
-        common = [c for c in all_cards if c.suit_id != "high_deck"]  # 40 cards
-        high   = [c for c in all_cards if c.suit_id == "high_deck"]  # 14 cards
-
-        if len(common) < 3 or len(high) < 2:
-            await interaction.followup.send(
+        # Vérifie défi actif
+        active = await self.db.get_active_tirage_log(guild_id, discord_id)
+        if active:
+            await interaction.response.send_message(
                 embed=error_embed(
-                    "Le deck est incomplet en base "
-                    f"({len(common)} cartes communes, {len(high)} Haut Deck). "
-                    "Contacte un administrateur."
+                    "Tu as déjà un défi en cours.\n"
+                    "Utilise **/mon-defi** pour le consulter ou le valider."
                 ),
                 ephemeral=True,
             )
             return
 
-        # Draw independently from each pile
-        drawn_common = random.sample(common, 3)
-        drawn_high   = random.sample(high, 2)
+        # Vérifie tirage du jour
+        today_log = await self.db.get_tirage_log_today(guild_id, discord_id)
+        if today_log:
+            await interaction.response.send_message(
+                embed=error_embed("Tu as déjà tiré aujourd'hui. Reviens demain !"),
+                ephemeral=True,
+            )
+            return
 
-        # Reading order: 9h, 12h, 3h = common ; 6h, centre = high deck
-        reading: list[TarokkaCard] = [*drawn_common, *drawn_high]
+        await interaction.response.defer()
 
-        view = TirageView(reading, author_id=interaction.user.id)
-        msg = await interaction.followup.send(
-            embed=tirage_summary_embed(reading),
-            view=view,
-            wait=True,
+        try:
+            card, defi, log = await self.db.draw_tirage(guild_id, discord_id)
+        except DatabaseError as exc:
+            await interaction.followup.send(
+                embed=error_embed(str(exc)), ephemeral=True
+            )
+            return
+
+        view = TirageView(
+            db=self.db,
+            card=card,
+            defi=defi,
+            log=log,
+            author_id=interaction.user.id,
         )
-        view.message = msg
+        await interaction.followup.send(embed=tirage_embed(card, defi), view=view)
+
+    # ------------------------------------------------------------------
+    # /mon-defi — voir le défi en cours
+    # ------------------------------------------------------------------
+
+    @app_commands.command(
+        name="mon-defi",
+        description="Voir ton défi en cours.",
+    )
+    async def mon_defi(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+
+        result = await self.db.get_full_tirage_log(
+            str(interaction.guild_id), str(interaction.user.id)
+        )
+        if not result:
+            await interaction.followup.send(
+                embed=error_embed(
+                    "Tu n'as pas de défi en cours.\n"
+                    "Utilise **/tirage** pour tirer une carte !"
+                ),
+                ephemeral=True,
+            )
+            return
+
+        log, card, defi = result
+        view = MonDefiView(db=self.db, log=log, card=card, defi=defi)
+        await interaction.followup.send(
+            embed=mon_defi_embed(log, card, defi), view=view, ephemeral=True
+        )
 
 
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(TarokkaCog(bot))
+    await bot.add_cog(TirageCog(bot))

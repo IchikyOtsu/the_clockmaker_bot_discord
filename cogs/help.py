@@ -32,10 +32,10 @@ class HelpCog(commands.Cog):
         )
 
         embed.add_field(
-            name="🃏  Tarokka",
+            name="🃏  Tirage & Défis",
             value=_field([
-                ("/tirage",          "Effectuer un tirage Tarokka (3 communes + 2 Haut Deck)"),
-                ("/tarokka [carte]", "Parcourir le deck Tarokka"),
+                ("/tirage",    "Tirer une carte et recevoir un défi du jour (1×/jour)"),
+                ("/mon-defi",  "Voir ton défi en cours (boutons : valider / fermer)"),
             ]),
             inline=False,
         )
@@ -60,12 +60,20 @@ class HelpCog(commands.Cog):
         embed.add_field(
             name="🔒  Administration",
             value=_field([
-                ("/config-meteo",  "Configurer le salon et l'heure d'annonce météo"),
-                ("/config-anniv",  "Configurer le salon et l'heure des anniversaires"),
-                ("/add-meteo",     "Ajouter un type de météo"),
-                ("/del-meteo",     "Supprimer un type de météo"),
-                ("/races add",     "Ajouter une race jouable"),
-                ("/races remove",  "Désactiver une race"),
+                ("/config-meteo",   "Configurer le salon et l'heure d'annonce météo"),
+                ("/config-anniv",   "Configurer le salon et l'heure des anniversaires"),
+                ("/add-meteo",      "Ajouter un type de météo"),
+                ("/del-meteo",      "Supprimer un type de météo"),
+                ("/races add",      "Ajouter une race jouable"),
+                ("/races remove",   "Désactiver une race"),
+                ("/card-type add",  "Ajouter un type de carte"),
+                ("/card-type remove","Supprimer un type de carte"),
+                ("/card add",       "Ajouter une carte"),
+                ("/card remove",    "Désactiver une carte"),
+                ("/defi add",       "Ajouter un défi"),
+                ("/defi remove",    "Désactiver un défi"),
+                ("/defi link",      "Lier un défi à une carte"),
+                ("/defi unlink",    "Délier un défi d'une carte"),
             ]),
             inline=False,
         )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date
+import random
+from datetime import date, datetime
 from typing import Optional
 
 from supabase import acreate_client, AsyncClient
@@ -8,7 +9,7 @@ from supabase import acreate_client, AsyncClient
 from models.character import Character, _compute_age
 from models.guild_config import GuildConfig
 from models.race import Race
-from models.tarokka import TarokkaCard
+from models.tirage import CardType, TirageCard, Defi, TirageLog, TIRAGE_CARD_BUCKET
 from models.weather import WeatherType
 
 
@@ -413,40 +414,367 @@ class DatabaseClient:
         return len(result.data) > 0
 
     # ------------------------------------------------------------------
-    # Tarokka
+    # Card Types
     # ------------------------------------------------------------------
 
-    async def get_tarokka_card(self, image_num: int) -> TarokkaCard | None:
+    async def get_card_types(self, guild_id: str) -> list[CardType]:
         result = await (
-            self._client.table("tarokka_cards")
-            .select("*, tarokka_suits(*)")
-            .eq("image_num", image_num)
+            self._client.table("card_types")
+            .select("*")
+            .eq("guild_id", guild_id)
+            .order("nom")
+            .execute()
+        )
+        return [CardType.from_dict(r) for r in result.data]
+
+    async def add_card_type(
+        self, guild_id: str, nom: str, description: str | None = None
+    ) -> CardType:
+        result = await (
+            self._client.table("card_types")
+            .upsert(
+                {"guild_id": guild_id, "nom": nom.strip(), "description": description},
+                on_conflict="guild_id,nom",
+            )
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError(f"Impossible d'ajouter le type « {nom} ».")
+        return CardType.from_dict(result.data[0])
+
+    async def remove_card_type(self, guild_id: str, nom: str) -> CardType:
+        rows = await self.get_card_types(guild_id)
+        target = next((t for t in rows if t.nom == nom), None)
+        if not target:
+            raise DatabaseError(f"Type introuvable : « {nom} ».")
+        try:
+            result = await (
+                self._client.table("card_types")
+                .delete()
+                .eq("id", str(target.id))
+                .execute()
+            )
+        except Exception as exc:
+            if "foreign key" in str(exc).lower() or "fk" in str(exc).lower():
+                raise DatabaseError(
+                    "Ce type a des cartes associées. Désactive d'abord les cartes."
+                ) from exc
+            raise DatabaseError(str(exc)) from exc
+        if not result.data:
+            raise DatabaseError("Échec de la suppression.")
+        return target
+
+    # ------------------------------------------------------------------
+    # Tirage Cards
+    # ------------------------------------------------------------------
+
+    async def get_active_tirage_cards(self, guild_id: str) -> list[TirageCard]:
+        result = await (
+            self._client.table("tirage_cards")
+            .select("*, card_types(nom)")
+            .eq("guild_id", guild_id)
+            .eq("is_active", True)
+            .order("nom")
+            .execute()
+        )
+        return [TirageCard.from_dict(r) for r in result.data]
+
+    async def get_all_tirage_cards(self, guild_id: str) -> list[TirageCard]:
+        result = await (
+            self._client.table("tirage_cards")
+            .select("*, card_types(nom)")
+            .eq("guild_id", guild_id)
+            .order("nom")
+            .execute()
+        )
+        return [TirageCard.from_dict(r) for r in result.data]
+
+    async def add_tirage_card(
+        self, guild_id: str, nom: str, type_id: str
+    ) -> TirageCard:
+        result = await (
+            self._client.table("tirage_cards")
+            .upsert(
+                {"guild_id": guild_id, "nom": nom.strip(), "type_id": type_id, "is_active": True},
+                on_conflict="guild_id,nom",
+            )
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError(f"Impossible d'ajouter la carte « {nom} ».")
+        card_id = result.data[0]["id"]
+        # Re-fetch with joined type name
+        refetch = await (
+            self._client.table("tirage_cards")
+            .select("*, card_types(nom)")
+            .eq("id", card_id)
+            .limit(1)
+            .execute()
+        )
+        return TirageCard.from_dict(refetch.data[0])
+
+    async def deactivate_tirage_card(self, guild_id: str, nom: str) -> TirageCard:
+        cards = await self.get_all_tirage_cards(guild_id)
+        target = next((c for c in cards if c.nom == nom and c.is_active), None)
+        if not target:
+            raise DatabaseError(f"Carte active introuvable : « {nom} ».")
+        await (
+            self._client.table("tirage_cards")
+            .update({"is_active": False})
+            .eq("id", str(target.id))
+            .execute()
+        )
+        return target
+
+    async def upload_card_image(
+        self, guild_id: str, card_id: str, image_bytes: bytes
+    ) -> str:
+        """Upload a JPEG card image and update the card's image_url. Returns public URL."""
+        path = f"{guild_id}/{card_id}.jpg"
+        await self._client.storage.from_(TIRAGE_CARD_BUCKET).upload(
+            path=path,
+            file=image_bytes,
+            file_options={"content-type": "image/jpeg", "upsert": "true"},
+        )
+        url = await self._client.storage.from_(TIRAGE_CARD_BUCKET).get_public_url(path)
+        await (
+            self._client.table("tirage_cards")
+            .update({"image_url": url})
+            .eq("id", card_id)
+            .execute()
+        )
+        return url
+
+    # ------------------------------------------------------------------
+    # Défis
+    # ------------------------------------------------------------------
+
+    async def get_active_defis(self, guild_id: str) -> list[Defi]:
+        result = await (
+            self._client.table("defis")
+            .select("*")
+            .eq("guild_id", guild_id)
+            .eq("is_active", True)
+            .order("titre")
+            .execute()
+        )
+        return [Defi.from_dict(r) for r in result.data]
+
+    async def get_all_defis(self, guild_id: str) -> list[Defi]:
+        result = await (
+            self._client.table("defis")
+            .select("*")
+            .eq("guild_id", guild_id)
+            .order("titre")
+            .execute()
+        )
+        return [Defi.from_dict(r) for r in result.data]
+
+    async def add_defi(self, guild_id: str, titre: str, description: str) -> Defi:
+        result = await (
+            self._client.table("defis")
+            .upsert(
+                {
+                    "guild_id": guild_id,
+                    "titre": titre.strip(),
+                    "description": description.strip(),
+                    "is_active": True,
+                },
+                on_conflict="guild_id,titre",
+            )
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError(f"Impossible d'ajouter le défi « {titre} ».")
+        return Defi.from_dict(result.data[0])
+
+    async def deactivate_defi(self, guild_id: str, titre: str) -> Defi:
+        defis = await self.get_all_defis(guild_id)
+        target = next((d for d in defis if d.titre == titre and d.is_active), None)
+        if not target:
+            raise DatabaseError(f"Défi actif introuvable : « {titre} ».")
+        await (
+            self._client.table("defis")
+            .update({"is_active": False})
+            .eq("id", str(target.id))
+            .execute()
+        )
+        return target
+
+    async def link_card_defi(self, card_id: str, defi_id: str) -> None:
+        await (
+            self._client.table("card_defis")
+            .upsert(
+                {"card_id": card_id, "defi_id": defi_id},
+                on_conflict="card_id,defi_id",
+                ignore_duplicates=True,
+            )
+            .execute()
+        )
+
+    async def unlink_card_defi(self, card_id: str, defi_id: str) -> None:
+        await (
+            self._client.table("card_defis")
+            .delete()
+            .eq("card_id", card_id)
+            .eq("defi_id", defi_id)
+            .execute()
+        )
+
+    async def get_active_defis_for_card(self, card_id: str) -> list[Defi]:
+        links = await (
+            self._client.table("card_defis")
+            .select("defi_id")
+            .eq("card_id", card_id)
+            .execute()
+        )
+        if not links.data:
+            return []
+        defi_ids = [r["defi_id"] for r in links.data]
+        result = await (
+            self._client.table("defis")
+            .select("*")
+            .in_("id", defi_ids)
+            .eq("is_active", True)
+            .execute()
+        )
+        return [Defi.from_dict(r) for r in result.data]
+
+    # ------------------------------------------------------------------
+    # Tirage — Draw & Log
+    # ------------------------------------------------------------------
+
+    async def get_active_tirage_log(
+        self, guild_id: str, discord_id: str
+    ) -> TirageLog | None:
+        result = await (
+            self._client.table("tirage_log")
+            .select("*")
+            .eq("guild_id", guild_id)
+            .eq("discord_id", discord_id)
+            .eq("status", "active")
             .limit(1)
             .execute()
         )
         if not result.data:
             return None
-        return TarokkaCard.from_dict(result.data[0])
+        return TirageLog.from_dict(result.data[0])
 
-    async def get_random_tarokka_card(self) -> TarokkaCard | None:
-        import random as _random
+    async def get_tirage_log_today(
+        self, guild_id: str, discord_id: str
+    ) -> TirageLog | None:
         result = await (
-            self._client.table("tarokka_cards")
-            .select("*, tarokka_suits(*)")
+            self._client.table("tirage_log")
+            .select("*")
+            .eq("guild_id", guild_id)
+            .eq("discord_id", discord_id)
+            .eq("drawn_date", date.today().isoformat())
+            .limit(1)
             .execute()
         )
         if not result.data:
             return None
-        return TarokkaCard.from_dict(_random.choice(result.data))
+        return TirageLog.from_dict(result.data[0])
 
-    async def get_all_tarokka_cards(self) -> list[TarokkaCard]:
-        result = await (
-            self._client.table("tarokka_cards")
-            .select("*, tarokka_suits(*)")
-            .order("image_num")
+    async def draw_tirage(
+        self, guild_id: str, discord_id: str
+    ) -> tuple[TirageCard, Defi, TirageLog]:
+        """Draw a random card that has at least one active defi, assign a random defi.
+        Saves to tirage_log immediately. Raises DatabaseError if pool is empty."""
+        active_cards = await self.get_active_tirage_cards(guild_id)
+        if not active_cards:
+            raise DatabaseError("Aucune carte active. Contacte un administrateur.")
+
+        # Build map card_id → list[Defi] (only cards with ≥1 active defi)
+        card_defi_map: dict[str, list[Defi]] = {}
+        for card in active_cards:
+            defis = await self.get_active_defis_for_card(str(card.id))
+            if defis:
+                card_defi_map[str(card.id)] = defis
+
+        if not card_defi_map:
+            raise DatabaseError(
+                "Aucune carte n'a de défi actif assigné. Contacte un administrateur."
+            )
+
+        eligible = [c for c in active_cards if str(c.id) in card_defi_map]
+        card = random.choice(eligible)
+        defi = random.choice(card_defi_map[str(card.id)])
+
+        try:
+            result = await (
+                self._client.table("tirage_log")
+                .insert({
+                    "guild_id": guild_id,
+                    "discord_id": discord_id,
+                    "card_id": str(card.id),
+                    "defi_id": str(defi.id),
+                    "drawn_date": date.today().isoformat(),
+                    "status": "active",
+                })
+                .execute()
+            )
+        except Exception as exc:
+            if "unique" in str(exc).lower() or "23505" in str(exc):
+                raise DatabaseError("Tu as déjà tiré aujourd'hui. Reviens demain !")
+            raise DatabaseError(str(exc)) from exc
+
+        if not result.data:
+            raise DatabaseError("Échec de l'enregistrement du tirage.")
+        log = TirageLog.from_dict(result.data[0])
+        return card, defi, log
+
+    async def refuse_tirage(self, log_id: str) -> None:
+        """Mark a draw as refused (counts toward daily limit, frees active-challenge slot)."""
+        await (
+            self._client.table("tirage_log")
+            .update({"status": "refused"})
+            .eq("id", log_id)
             .execute()
         )
-        return [TarokkaCard.from_dict(r) for r in result.data]
+
+    async def validate_tirage(self, guild_id: str, discord_id: str) -> TirageLog:
+        log = await self.get_active_tirage_log(guild_id, discord_id)
+        if not log:
+            raise DatabaseError("Tu n'as pas de défi en cours.")
+        result = await (
+            self._client.table("tirage_log")
+            .update({
+                "status": "validated",
+                "validated_at": datetime.utcnow().isoformat(),
+            })
+            .eq("id", str(log.id))
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Échec de la validation.")
+        return TirageLog.from_dict(result.data[0])
+
+    async def get_full_tirage_log(
+        self, guild_id: str, discord_id: str
+    ) -> tuple[TirageLog, TirageCard, Defi] | None:
+        log = await self.get_active_tirage_log(guild_id, discord_id)
+        if not log:
+            return None
+        card_result = await (
+            self._client.table("tirage_cards")
+            .select("*, card_types(nom)")
+            .eq("id", str(log.card_id))
+            .limit(1)
+            .execute()
+        )
+        defi_result = await (
+            self._client.table("defis")
+            .select("*")
+            .eq("id", str(log.defi_id))
+            .limit(1)
+            .execute()
+        )
+        if not card_result.data or not defi_result.data:
+            return None
+        card = TirageCard.from_dict(card_result.data[0])
+        defi = Defi.from_dict(defi_result.data[0])
+        return log, card, defi
 
     # ------------------------------------------------------------------
     # Birthdays

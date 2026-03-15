@@ -35,6 +35,7 @@ class ClockMasterBot(commands.Bot):
         await self.load_extension("cogs.weather")
         await self.load_extension("cogs.birthdays")
         await self.load_extension("cogs.tarokka")
+        await self.load_extension("cogs.tirage_admin")
         await self.load_extension("cogs.help")
 
         if config.DEV_GUILD_ID:

@@ -4,18 +4,12 @@ from datetime import date
 import discord
 
 from models.character import Character
-from models.tarokka import TarokkaCard
+from models.tirage import TirageCard, Defi, TirageLog
 from models.weather import WeatherType
 
-_SUIT_COLORS: dict[str, int] = {
-    "stars":     0x7B68EE,   # Violet arcane
-    "swords":    0xC0392B,   # Rouge sang
-    "coins":     0xC9A84C,   # Or
-    "glyphs":    0x27AE60,   # Vert foi
-    "high_deck": 0xFFD700,   # Or royal — Haut Deck
-}
-
-COLOR_PINK  = 0xFF85A1   # Rose — anniversaires
+COLOR_TIRAGE = 0x8B5CF6   # Violet mystique — tirage de cartes
+COLOR_DEFI   = 0xF59E0B   # Ambre — défi actif
+COLOR_PINK   = 0xFF85A1   # Rose — anniversaires
 
 # Palette de couleurs
 COLOR_GOLD  = 0xC9A84C   # Or antique — profil
@@ -125,18 +119,29 @@ def error_embed(message: str) -> discord.Embed:
     return discord.Embed(title="Erreur", description=message, color=COLOR_RED)
 
 
-def tarokka_embed(card: TarokkaCard, total: int = 40) -> discord.Embed:
-    """Embed d'affichage d'une carte Tarokka avec son image."""
-    color = _SUIT_COLORS.get(card.suit_id, COLOR_DARK)
-    embed = discord.Embed(
-        title=f"{card.card_label}  —  {card.card_name}",
-        description=f"*{card.represents}*",
-        color=color,
-    )
-    embed.add_field(name="Suite", value=card.suit_name, inline=True)
-    embed.add_field(name="Carte", value=f"{card.image_num} / {total}", inline=True)
-    embed.set_image(url=card.image_url)
-    embed.set_footer(text=f"Tarokka • {card.suit_name} — {card.suit_description[:120]}…")
+def tirage_embed(card: TirageCard, defi: Defi) -> discord.Embed:
+    """Embed public après un tirage réussi."""
+    embed = discord.Embed(title=f"✦  {card.nom}", color=COLOR_TIRAGE)
+    embed.add_field(name="Type",        value=card.type_nom,          inline=True)
+    embed.add_field(name="Défi",        value=f"**{defi.titre}**",    inline=True)
+    embed.add_field(name="Description", value=defi.description,       inline=False)
+    if card.image_url:
+        embed.set_image(url=card.image_url)
+    embed.set_footer(text="Tirage du jour — The Clockmaster")
+    return embed
+
+
+def mon_defi_embed(log: TirageLog, card: TirageCard, defi: Defi) -> discord.Embed:
+    """Embed éphémère pour /mon-defi."""
+    embed = discord.Embed(title="📋  Ton défi en cours", color=COLOR_DEFI)
+    embed.add_field(name="Carte",       value=card.nom,                                    inline=True)
+    embed.add_field(name="Type",        value=card.type_nom,                               inline=True)
+    embed.add_field(name="Tiré le",     value=log.drawn_date.strftime("%d/%m/%Y"),         inline=True)
+    embed.add_field(name="Défi",        value=f"**{defi.titre}**",                        inline=False)
+    embed.add_field(name="Description", value=defi.description,                           inline=False)
+    if card.image_url:
+        embed.set_thumbnail(url=card.image_url)
+    embed.set_footer(text="Utilise /valider-defi quand tu as terminé • The Clockmaster")
     return embed
 
 
@@ -164,42 +169,6 @@ def birthday_embed(character: Character) -> discord.Embed:
     embed.set_footer(text=f"The Clockmaster • {today.strftime('%d/%m/%Y')}")
     return embed
 
-
-_READING_POSITIONS = ["🕘  9h", "🕛  12h", "🕒  3h", "🕖  6h", "✦  Centre"]
-
-
-def tirage_summary_embed(cards: list) -> discord.Embed:
-    """Overview embed for a 5-card Tarokka reading."""
-    embed = discord.Embed(
-        title="✦  Tirage Tarokka",
-        description="Cinq cartes ont été tirées. Utilise **▶** pour les voir en détail.",
-        color=COLOR_DARK,
-    )
-    for pos, card in zip(_READING_POSITIONS, cards):
-        deck = "Haut Deck" if card.suit_id == "high_deck" else card.suit_name
-        embed.add_field(
-            name=pos,
-            value=f"**{card.card_label}**\n*{card.card_name}*\n{deck}",
-            inline=True,
-        )
-    embed.set_footer(text="Tarokka • The Clockmaster")
-    return embed
-
-
-def tirage_card_embed(card, position_label: str, card_num: int) -> discord.Embed:
-    """Detailed embed for a single card in a reading, with its position label."""
-    color = _SUIT_COLORS.get(card.suit_id, COLOR_DARK)
-    embed = discord.Embed(
-        title=f"{position_label}  —  {card.card_label}",
-        description=f"**{card.card_name}**\n\n*{card.represents}*",
-        color=color,
-    )
-    embed.add_field(name="Suite", value=card.suit_name, inline=True)
-    embed.set_image(url=card.image_url)
-    embed.set_footer(
-        text=f"Carte {card_num} / 5 • Tarokka • {card.suit_name} — {card.suit_description[:100]}…"
-    )
-    return embed
 
 
 def weather_embed(weather: WeatherType, today: date, is_new: bool) -> discord.Embed:
