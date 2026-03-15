@@ -165,6 +165,18 @@ class DatabaseClient:
 
         return None
 
+    async def list_guild_characters(self, guild_id: str) -> list[Character]:
+        """Return all active characters for a guild, sorted by name."""
+        result = await (
+            self._client.table("characters")
+            .select("*")
+            .eq("guild_id", guild_id)
+            .eq("is_active", True)
+            .order("prenom")
+            .execute()
+        )
+        return [Character.from_dict(row) for row in result.data]
+
     async def list_characters(self, discord_id: str, guild_id: str) -> list[Character]:
         result = await (
             self._client.table("characters")
@@ -203,6 +215,22 @@ class DatabaseClient:
     ) -> Character:
         """Convenience wrapper for updating a single field."""
         return await self.update_character_fields(discord_id, guild_id, {field: value})
+
+    async def update_character_reputation_by_id(
+        self, character_id: str, guild_id: str, new_reputation: int
+    ) -> Character:
+        """Set reputation directly on a specific character (by UUID)."""
+        new_reputation = max(-100, min(100, new_reputation))
+        result = await (
+            self._client.table("characters")
+            .update({"reputation": new_reputation})
+            .eq("id", character_id)
+            .eq("guild_id", guild_id)
+            .execute()
+        )
+        if not result.data:
+            raise CharacterNotFound("Personnage introuvable.")
+        return Character.from_dict(result.data[0])
 
     async def switch_active_character(
         self, discord_id: str, guild_id: str, character_id: str

@@ -15,6 +15,7 @@ from ui.embeds import (
     COLOR_GREEN,
     COLOR_DARK,
     COLOR_RED,
+    COLOR_CONFESSION,
     confession_embed,
     confession_reply_embed,
     confession_reply_pending_embed,
@@ -313,6 +314,174 @@ class ReplyReviewView(discord.ui.View):
 
 
 # ---------------------------------------------------------------------------
+# ReputationModal / ReputationView — boutons dans le salon mod après approval
+# ---------------------------------------------------------------------------
+
+class ReputationAmountModal(discord.ui.Modal):
+    """Étape 2 — saisie du montant après sélection du personnage."""
+
+    amount = discord.ui.TextInput(
+        label="Montant (1–100)",
+        placeholder="Ex: 5",
+        max_length=3,
+    )
+
+    def __init__(
+        self,
+        cog: ConfessionsCog,
+        character_id: str,
+        character_name: str,
+        current_rep: int,
+        guild_id: str,
+        mode: str,
+    ) -> None:
+        super().__init__(
+            title="Ajouter de la réputation" if mode == "add" else "Retirer de la réputation"
+        )
+        self._cog = cog
+        self._character_id = character_id
+        self._character_name = character_name
+        self._current_rep = current_rep
+        self._guild_id = guild_id
+        self._mode = mode
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        try:
+            amount = int(str(self.amount).strip())
+            if amount < 1 or amount > 100:
+                raise ValueError
+        except ValueError:
+            await interaction.followup.send(
+                embed=error_embed("Montant invalide. Entrez un nombre entre 1 et 100."),
+                ephemeral=True,
+            )
+            return
+
+        delta = amount if self._mode == "add" else -amount
+        new_rep = max(-100, min(100, self._current_rep + delta))
+        actual_delta = new_rep - self._current_rep
+        await self._cog.db.update_character_reputation_by_id(
+            self._character_id, self._guild_id, new_rep
+        )
+        sign = "+" if actual_delta >= 0 else ""
+        cap_note = " *(cap atteint)*" if abs(actual_delta) < abs(delta) else ""
+        await interaction.followup.send(
+            embed=discord.Embed(
+                title="Réputation mise à jour",
+                description=(
+                    f"**{self._character_name}** : `{self._current_rep}` → `{new_rep}` "
+                    f"({sign}{actual_delta}{cap_note})"
+                ),
+                color=COLOR_GREEN if actual_delta >= 0 else COLOR_CONFESSION,
+            ),
+            ephemeral=True,
+        )
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
+        import traceback; traceback.print_exc()
+        try:
+            await interaction.followup.send(embed=error_embed("Une erreur est survenue."), ephemeral=True)
+        except Exception:
+            pass
+
+
+class CharacterSelectView(discord.ui.View):
+    """Étape 1 — dropdown de sélection du personnage (éphémère)."""
+
+    def __init__(
+        self,
+        cog: ConfessionsCog,
+        mode: str,
+        characters: list,
+        guild_id: str,
+    ) -> None:
+        super().__init__(timeout=60)
+        self._cog = cog
+        self._mode = mode
+        self._guild_id = guild_id
+        self._char_map = {str(c.id): c for c in characters}
+
+        options = [
+            discord.SelectOption(
+                label=f"{c.prenom} {c.nom}"[:100],
+                description=f"Réputation : {c.reputation}",
+                value=str(c.id),
+            )
+            for c in characters[:25]
+        ]
+        select = discord.ui.Select(
+            placeholder="Choisir un personnage...",
+            options=options,
+        )
+        select.callback = self._on_select
+        self.add_item(select)
+
+    async def _on_select(self, interaction: discord.Interaction) -> None:
+        char_id = interaction.data["values"][0]
+        char = self._char_map[char_id]
+        await interaction.response.send_modal(
+            ReputationAmountModal(
+                self._cog,
+                char_id,
+                char.full_name,
+                char.reputation,
+                self._guild_id,
+                self._mode,
+            )
+        )
+
+
+class ReputationView(discord.ui.View):
+    """Deux boutons +/– réputation attachés au message d'approbation dans le salon mod."""
+
+    def __init__(self, cog: ConfessionsCog, confession_id: str) -> None:
+        super().__init__(timeout=None)
+        self._cog = cog
+        self._confession_id = confession_id
+        self.add_rep_btn.custom_id = f"conf_rep_add:{confession_id}"
+        self.rem_rep_btn.custom_id = f"conf_rep_rem:{confession_id}"
+
+    async def _open_select(
+        self, interaction: discord.Interaction, mode: str
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        characters = await self._cog.db.list_guild_characters(str(interaction.guild_id))
+        if not characters:
+            await interaction.followup.send(
+                embed=error_embed("Aucun personnage actif trouvé sur ce serveur."),
+                ephemeral=True,
+            )
+            return
+        view = CharacterSelectView(self._cog, mode, characters, str(interaction.guild_id))
+        await interaction.followup.send(
+            "Choisissez un personnage :", view=view, ephemeral=True
+        )
+
+    @discord.ui.button(
+        label="+ Réputation",
+        style=discord.ButtonStyle.success,
+        custom_id="conf_rep_add:placeholder",
+        emoji="⭐",
+    )
+    async def add_rep_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self._open_select(interaction, "add")
+
+    @discord.ui.button(
+        label="− Réputation",
+        style=discord.ButtonStyle.danger,
+        custom_id="conf_rep_rem:placeholder",
+        emoji="💀",
+    )
+    async def rem_rep_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await self._open_select(interaction, "remove")
+
+
+# ---------------------------------------------------------------------------
 # ReviewView — persistent (timeout=None), 5 boutons de modération
 # ---------------------------------------------------------------------------
 
@@ -426,6 +595,7 @@ class ConfessionsCog(commands.Cog):
         for confession in posted:
             self.bot.add_view(ConfessionPublicView(self, str(confession.id)))
             self.bot.add_view(ReplyPublicView(self, str(confession.id)))
+            self.bot.add_view(ReputationView(self, str(confession.id)))
         pending_replies = await self.db.get_pending_replies()
         for reply in pending_replies:
             self.bot.add_view(ReplyReviewView(self, str(reply.id)))
@@ -704,7 +874,9 @@ class ConfessionsCog(commands.Cog):
         approved_embed.set_footer(
             text=f"✅ Approuvée par {interaction.user} • publiée dans #{thread.name} • The Clockmaster"
         )
-        await interaction.response.edit_message(embed=approved_embed, view=None)
+        rep_view = ReputationView(self, str(confession.id))
+        self.bot.add_view(rep_view)
+        await interaction.response.edit_message(embed=approved_embed, view=rep_view)
 
         try:
             user = await self.bot.fetch_user(int(reply.discord_id))
@@ -822,7 +994,9 @@ class ConfessionsCog(commands.Cog):
         approved_embed.set_footer(
             text=f"✅ Approuvée par {interaction.user} • #{confession.number} publié • The Clockmaster"
         )
-        await interaction.response.edit_message(embed=approved_embed, view=None)
+        rep_view = ReputationView(self, confession_id)
+        self.bot.add_view(rep_view)
+        await interaction.response.edit_message(embed=approved_embed, view=rep_view)
 
         try:
             user = await self.bot.fetch_user(int(confession.discord_id))
