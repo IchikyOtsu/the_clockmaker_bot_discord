@@ -46,8 +46,8 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
         max_length=500,
         required=True,
     )
-    karma = discord.ui.TextInput(
-        label="Karma (optionnel, -100 à 100)",
+    reputation = discord.ui.TextInput(
+        label="Réputation (optionnel, -100 à 100)",
         placeholder="0",
         max_length=5,
         required=False,
@@ -96,21 +96,21 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
             )
             return
 
-        # Parse optional karma
-        karma_raw = self.karma.value.strip()
-        karma_value = 0
-        if karma_raw:
+        # Parse optional reputation
+        reputation_raw = self.reputation.value.strip()
+        reputation_value = 0
+        if reputation_raw:
             try:
-                karma_value = int(karma_raw)
+                reputation_value = int(reputation_raw)
             except ValueError:
                 await interaction.response.send_message(
-                    embed=error_embed("Le karma doit être un entier entre -100 et 100."),
+                    embed=error_embed("La réputation doit être un entier entre -100 et 100."),
                     ephemeral=True,
                 )
                 return
-            if not (-100 <= karma_value <= 100):
+            if not (-100 <= reputation_value <= 100):
                 await interaction.response.send_message(
-                    embed=error_embed("Le karma doit être compris entre -100 et 100."),
+                    embed=error_embed("La réputation doit être compris entre -100 et 100."),
                     ephemeral=True,
                 )
                 return
@@ -129,7 +129,7 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
                     "age": age_value,
                     "date_naissance": date_iso,
                     "faceclaim": self.faceclaim.value.strip(),
-                    "karma": karma_value,
+                    "reputation": reputation_value,
                 },
             )
         except DatabaseError as exc:

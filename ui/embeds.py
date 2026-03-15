@@ -31,12 +31,12 @@ def _is_url(value: str) -> bool:
     return bool(_URL_RE.match(value.strip()))
 
 
-def _karma_bar(karma: int) -> str:
-    """Visual bar for karma -100..+100. Example: `████████░░` +40"""
-    filled = round((karma + 100) / 20)   # 0..10
+def _reputation_bar(reputation: int) -> str:
+    """Visual bar for reputation -100..+100. Example: `████████░░` +40"""
+    filled = round((reputation + 100) / 20)   # 0..10
     bar = "█" * filled + "░" * (10 - filled)
-    sign = "+" if karma > 0 else ""
-    return f"`{bar}` {sign}{karma}"
+    sign = "+" if reputation > 0 else ""
+    return f"`{bar}` {sign}{reputation}"
 
 
 def profile_embed(character: Character) -> discord.Embed:
@@ -56,7 +56,7 @@ def profile_embed(character: Character) -> discord.Embed:
     if character.birthday_display:
         embed.add_field(name="Anniversaire", value=character.birthday_display,     inline=True)
 
-    embed.add_field(name="Karma",       value=_karma_bar(character.karma),         inline=False)
+    embed.add_field(name="Réputation",  value=_reputation_bar(character.reputation), inline=False)
 
     if not character.avatar_url and not _is_url(character.faceclaim):
         embed.add_field(name="Faceclaim", value=character.faceclaim,               inline=False)

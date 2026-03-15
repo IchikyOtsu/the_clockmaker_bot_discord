@@ -26,7 +26,7 @@ class Character:
     faceclaim: str
     avatar_url: Optional[str]
     metier: Optional[str]
-    karma: int          # -100 to 100, optional (default 0)
+    reputation: int     # -100 to 100, optional (default 0)
     is_active: bool
 
     @property
@@ -66,6 +66,6 @@ class Character:
             faceclaim=data["faceclaim"],
             avatar_url=data.get("avatar_url"),
             metier=data.get("metier"),
-            karma=int(data.get("karma", 0)),
+            reputation=int(data.get("reputation", 0)),
             is_active=bool(data.get("is_active", True)),
         )

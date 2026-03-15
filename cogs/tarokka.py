@@ -272,7 +272,7 @@ class TarokkaCog(commands.Cog):
         description="Effectuer un tirage Tarokka : 3 cartes communes + 2 Haut Deck.",
     )
     async def tirage(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer()
 
         all_cards = await self.db.get_all_tarokka_cards()
         common = [c for c in all_cards if c.suit_id != "high_deck"]  # 40 cards
@@ -300,7 +300,6 @@ class TarokkaCog(commands.Cog):
         msg = await interaction.followup.send(
             embed=tirage_summary_embed(reading),
             view=view,
-            ephemeral=True,
             wait=True,
         )
         view.message = msg

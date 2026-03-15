@@ -26,7 +26,7 @@ class RaceNotFound(DatabaseError):
 
 # Fields that can be updated (age is internal-only; race_id updated alongside espece)
 EDITABLE_FIELDS = frozenset({
-    "nom", "prenom", "espece", "race_id", "age", "date_naissance", "faceclaim", "metier", "avatar_url", "karma"
+    "nom", "prenom", "espece", "race_id", "age", "date_naissance", "faceclaim", "metier", "avatar_url", "reputation"
 })
 
 AVATAR_BUCKET = "avatars"
