@@ -31,6 +31,7 @@ class ClockMasterBot(commands.Bot):
         await self.load_extension("cogs.characters")
         await self.load_extension("cogs.profiles")
         await self.load_extension("cogs.races")
+        await self.load_extension("cogs.edit")
 
         if config.DEV_GUILD_ID:
             guild = discord.Object(id=config.DEV_GUILD_ID)

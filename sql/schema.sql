@@ -21,18 +21,20 @@ CREATE TABLE IF NOT EXISTS races (
 
 -- Characters: one per (discord_user, guild) pair
 CREATE TABLE IF NOT EXISTS characters (
-    id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    discord_id   TEXT        NOT NULL,
-    guild_id     TEXT        NOT NULL,
-    nom          TEXT        NOT NULL,
-    prenom       TEXT        NOT NULL,
-    espece       TEXT        NOT NULL,
-    age          INT         NOT NULL CHECK (age > 0 AND age < 10000),
-    faceclaim    TEXT        NOT NULL,
-    metier       TEXT,
-    is_active    BOOLEAN     NOT NULL DEFAULT TRUE,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    discord_id      TEXT        NOT NULL,
+    guild_id        TEXT        NOT NULL,
+    nom             TEXT        NOT NULL,
+    prenom          TEXT        NOT NULL,
+    espece          TEXT        NOT NULL,
+    age             INT         NOT NULL CHECK (age > 0 AND age < 10000),
+    date_naissance  DATE,
+    faceclaim       TEXT        NOT NULL,
+    avatar_url      TEXT,
+    metier          TEXT,
+    is_active       BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     -- 1 character per player per guild
     UNIQUE (discord_id, guild_id),
     CONSTRAINT fk_player

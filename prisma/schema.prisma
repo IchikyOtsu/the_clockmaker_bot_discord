@@ -2,7 +2,6 @@
 // The Clockmaster Bot — Prisma Schema (documentation only)
 // Ce fichier documente la structure de la base de données Supabase.
 // Il n'est PAS utilisé par le bot Python — voir sql/schema.sql
-// pour le schéma exécutable.
 // =============================================================
 
 generator client {
@@ -15,9 +14,6 @@ datasource db {
 }
 
 /// Un compte Discord sur un serveur spécifique.
-/// Clé primaire composite : (discord_id, guild_id).
-/// Un même utilisateur Discord peut exister sur plusieurs serveurs
-/// sans que leurs données se mélangent.
 model Player {
   discord_id String     @db.Text
   guild_id   String     @db.Text
@@ -30,21 +26,23 @@ model Player {
 }
 
 /// Personnage unique par joueur par serveur.
-/// UNIQUE (discord_id, guild_id) → 1 personnage par compte Discord par guild.
-/// espece est TEXT — valeur libre validée contre la table races à la création.
+/// avatar_url : photo uploadée dans Supabase Storage (bucket "avatars").
+/// date_naissance : format ISO YYYY-MM-DD, affiché en DD/MM/YYYY.
 model Character {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  discord_id String   @db.Text
-  guild_id   String   @db.Text
-  nom        String   @db.Text
-  prenom     String   @db.Text
-  espece     String   @db.Text
-  age        Int
-  faceclaim  String   @db.Text
-  metier     String?  @db.Text
-  is_active  Boolean  @default(true)
-  created_at DateTime @default(now()) @db.Timestamptz(6)
-  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  discord_id     String    @db.Text
+  guild_id       String    @db.Text
+  nom            String    @db.Text
+  prenom         String    @db.Text
+  espece         String    @db.Text
+  age            Int
+  date_naissance DateTime? @db.Date
+  faceclaim      String    @db.Text
+  avatar_url     String?   @db.Text
+  metier         String?   @db.Text
+  is_active      Boolean   @default(true)
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @default(now()) @db.Timestamptz(6)
 
   player Player @relation(fields: [discord_id, guild_id], references: [discord_id, guild_id], onDelete: Cascade)
 
@@ -53,8 +51,7 @@ model Character {
 }
 
 /// Race jouable, gérée par les admins via /races add|remove.
-/// Globale (non scopée par guild).
-/// Soft-delete via is_active = false.
+/// Globale (non scopée par guild). Soft-delete via is_active = false.
 model Race {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nom        String   @unique @db.Text

@@ -1,6 +1,20 @@
 import discord
+from datetime import datetime
 from core.database import DatabaseClient, DatabaseError
 from ui.embeds import character_created_embed, error_embed
+
+
+def _parse_date(value: str) -> str | None:
+    """Parse DD/MM/YYYY → ISO YYYY-MM-DD. Returns None if empty, raises ValueError if invalid."""
+    value = value.strip()
+    if not value:
+        return None
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    raise ValueError(f"Format de date invalide : « {value} ». Utilise JJ/MM/AAAA.")
 
 
 class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
@@ -19,6 +33,12 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
         placeholder="Ex : 27",
         max_length=5,
     )
+    date_naissance = discord.ui.TextInput(
+        label="Date de naissance (JJ/MM/AAAA)",
+        placeholder="Ex : 14/03/1998",
+        max_length=10,
+        required=False,
+    )
     faceclaim = discord.ui.TextInput(
         label="Faceclaim (URL d'image ou description)",
         style=discord.TextStyle.paragraph,
@@ -34,6 +54,7 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
         self._guild_id = guild_id
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        # Validate age
         try:
             age_value = int(self.age.value.strip())
             if age_value <= 0 or age_value >= 10000:
@@ -42,6 +63,15 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
             await interaction.response.send_message(
                 embed=error_embed("L'âge doit être un nombre entier positif (entre 1 et 9999)."),
                 ephemeral=True,
+            )
+            return
+
+        # Validate date
+        try:
+            date_iso = _parse_date(self.date_naissance.value)
+        except ValueError as exc:
+            await interaction.response.send_message(
+                embed=error_embed(str(exc)), ephemeral=True
             )
             return
 
@@ -56,6 +86,7 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
                     "prenom": self.prenom.value.strip(),
                     "espece": self._espece,
                     "age": age_value,
+                    "date_naissance": date_iso,
                     "faceclaim": self.faceclaim.value.strip(),
                 },
             )
