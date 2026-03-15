@@ -54,9 +54,11 @@ def _build_embeds() -> dict[str, discord.Embed]:
         ]),
         "confessions": embed("💬  Confessions", [
             ("Commandes joueur", [
-                ("/confess",      "Soumettre une confession anonyme"),
-                ("/reply <id>",   "Répondre anonymement à une confession"),
-                ("/report <id>",  "Signaler une confession aux modérateurs"),
+                ("/confess",           "Soumettre une confession anonyme"),
+                ("/reply <id>",        "Répondre anonymement à une confession"),
+                ("/report <id>",       "Signaler une confession aux modérateurs"),
+                ("/supprimer <id>",    "Supprimer ta propre confession"),
+                ("/recours <raison>",  "Faire un recours si tu es banni des confessions"),
             ]),
         ]),
         "admin": embed("🔒  Administration", [
@@ -91,10 +93,12 @@ def _build_embeds() -> dict[str, discord.Embed]:
                 ("/defi unlink", "Délier un défi d'une carte"),
             ]),
             ("Confessions", [
-                ("/confession setup",     "Configurer le salon et le mode révision"),
-                ("/confession ban",       "Bannir un utilisateur des confessions"),
-                ("/confession unban",     "Débannir un utilisateur"),
-                ("/confession list-bans", "Voir les utilisateurs bannis"),
+                ("/confession setup",      "Configurer le salon et le mode révision"),
+                ("/banconfess utilisateur", "Bannir un utilisateur des confessions"),
+                ("/banconfess liste",       "Voir les utilisateurs bannis"),
+                ("/banconfess nettoyer",    "Supprimer tous les bans de confessions"),
+                ("/debanconfess utilisateur", "Débannir un utilisateur"),
+                ("/debanconfess confession",  "Débannir l'auteur d'une confession (lien message)"),
             ]),
         ]),
     }

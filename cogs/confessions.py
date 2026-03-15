@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import traceback
 from typing import Optional
 
@@ -13,11 +14,17 @@ from models.confession import Confession
 from ui.embeds import (
     COLOR_GREEN,
     COLOR_DARK,
+    COLOR_RED,
     confession_embed,
     confession_reply_embed,
     confession_pending_embed,
     confession_report_embed,
     error_embed,
+)
+
+# Regex pour extraire le message_id d'un lien Discord
+_MSG_LINK_RE = re.compile(
+    r"https?://(?:ptb\.|canary\.)?discord(?:app)?\.com/channels/\d+/\d+/(\d+)"
 )
 
 
@@ -78,14 +85,25 @@ class DenyWithReasonModal(discord.ui.Modal, title="Rejeter la confession"):
         placeholder="Explique pourquoi cette confession est refusée…",
     )
 
-    def __init__(self, cog: ConfessionsCog, confession_id: str) -> None:
+    def __init__(
+        self,
+        cog: ConfessionsCog,
+        confession_id: str,
+        original_message: discord.Message,
+    ) -> None:
         super().__init__()
         self._cog = cog
         self._confession_id = confession_id
+        self._original_message = original_message
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        # Répond au modal (le ferme) sans envoyer de message visible
+        await interaction.response.defer()
         await self._cog._handle_review_reject(
-            interaction, self._confession_id, reason=str(self.reason)
+            interaction,
+            self._confession_id,
+            reason=str(self.reason),
+            original_message=self._original_message,
         )
 
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
@@ -100,8 +118,7 @@ class DenyWithReasonModal(discord.ui.Modal, title="Rejeter la confession"):
 # ---------------------------------------------------------------------------
 
 class ConfessionPublicView(discord.ui.View):
-    """Vue persistante attachée à chaque confession publique.
-    Doit être ré-enregistrée via bot.add_view() au démarrage."""
+    """Vue persistante attachée à chaque confession publique."""
 
     def __init__(self, cog: ConfessionsCog, confession_id: str) -> None:
         super().__init__(timeout=None)
@@ -129,7 +146,10 @@ class ConfessionPublicView(discord.ui.View):
             return
         if await self._cog.db.is_confession_banned(guild_id, str(interaction.user.id)):
             await interaction.response.send_message(
-                embed=error_embed("Tu as été banni(e) des confessions sur ce serveur."),
+                embed=error_embed(
+                    "Tu as été banni(e) des confessions sur ce serveur.\n"
+                    "Utilise `/recours` pour soumettre un recours."
+                ),
                 ephemeral=True,
             )
             return
@@ -163,10 +183,10 @@ class ReviewView(discord.ui.View):
         super().__init__(timeout=None)
         self._cog = cog
         self._confession_id = confession_id
-        self.approve_btn.custom_id   = f"conf_approve:{confession_id}"
-        self.deny_btn.custom_id      = f"conf_deny:{confession_id}"
+        self.approve_btn.custom_id     = f"conf_approve:{confession_id}"
+        self.deny_btn.custom_id        = f"conf_deny:{confession_id}"
         self.deny_reason_btn.custom_id = f"conf_deny_reason:{confession_id}"
-        self.deny_ban_btn.custom_id  = f"conf_deny_ban:{confession_id}"
+        self.deny_ban_btn.custom_id    = f"conf_deny_ban:{confession_id}"
         self.deny_report_btn.custom_id = f"conf_deny_report:{confession_id}"
 
     @discord.ui.button(
@@ -175,7 +195,9 @@ class ReviewView(discord.ui.View):
         custom_id="conf_approve:placeholder",
         emoji="✅",
     )
-    async def approve_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def approve_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         await self._cog._handle_review_approve(interaction, self._confession_id)
 
     @discord.ui.button(
@@ -183,7 +205,9 @@ class ReviewView(discord.ui.View):
         style=discord.ButtonStyle.danger,
         custom_id="conf_deny:placeholder",
     )
-    async def deny_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def deny_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         await self._cog._handle_review_reject(interaction, self._confession_id)
 
     @discord.ui.button(
@@ -192,9 +216,12 @@ class ReviewView(discord.ui.View):
         custom_id="conf_deny_reason:placeholder",
         emoji="💬",
     )
-    async def deny_reason_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def deny_reason_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        # On passe le message original pour pouvoir l'éditer depuis le modal
         await interaction.response.send_modal(
-            DenyWithReasonModal(self._cog, self._confession_id)
+            DenyWithReasonModal(self._cog, self._confession_id, interaction.message)
         )
 
     @discord.ui.button(
@@ -203,7 +230,9 @@ class ReviewView(discord.ui.View):
         custom_id="conf_deny_ban:placeholder",
         emoji="🔨",
     )
-    async def deny_ban_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def deny_ban_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         await self._cog._handle_review_reject(
             interaction, self._confession_id, also_ban=True
         )
@@ -214,7 +243,9 @@ class ReviewView(discord.ui.View):
         custom_id="conf_deny_report:placeholder",
         emoji="⚠️",
     )
-    async def deny_report_btn(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+    async def deny_report_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
         await self._cog._handle_review_reject(
             interaction, self._confession_id, also_report=True
         )
@@ -229,6 +260,14 @@ class ConfessionsCog(commands.Cog):
     confession_group = app_commands.Group(
         name="confession",
         description="Gestion des confessions.",
+    )
+    banconfess_group = app_commands.Group(
+        name="banconfess",
+        description="Gestion des bannissements de confessions.",
+    )
+    debanconfess_group = app_commands.Group(
+        name="debanconfess",
+        description="Débannir un utilisateur des confessions.",
     )
 
     def __init__(self, bot: commands.Bot) -> None:
@@ -251,6 +290,12 @@ class ConfessionsCog(commands.Cog):
     # Helpers internes
     # ------------------------------------------------------------------
 
+    async def _get_channel_name(self, cfg) -> str:
+        if cfg and cfg.confession_channel_id:
+            ch = self.bot.get_channel(int(cfg.confession_channel_id))
+            return ch.name if ch else ""
+        return ""
+
     async def _handle_confession_submit(
         self, interaction: discord.Interaction, content: str
     ) -> None:
@@ -267,7 +312,10 @@ class ConfessionsCog(commands.Cog):
 
         if await self.db.is_confession_banned(guild_id, discord_id):
             await interaction.response.send_message(
-                embed=error_embed("Tu as été banni(e) des confessions sur ce serveur."),
+                embed=error_embed(
+                    "Tu as été banni(e) des confessions sur ce serveur.\n"
+                    "Utilise `/recours` pour soumettre un recours."
+                ),
                 ephemeral=True,
             )
             return
@@ -276,9 +324,7 @@ class ConfessionsCog(commands.Cog):
         try:
             confession = await self.db.create_confession(guild_id, discord_id, content, status)
         except DatabaseError as exc:
-            await interaction.response.send_message(
-                embed=error_embed(str(exc)), ephemeral=True
-            )
+            await interaction.response.send_message(embed=error_embed(str(exc)), ephemeral=True)
             return
 
         if cfg.confession_review_mode:
@@ -306,10 +352,8 @@ class ConfessionsCog(commands.Cog):
         msg = await channel.send(embed=confession_embed(confession), view=view)
         self.bot.add_view(view)
         await self.db.update_confession_status(
-            str(confession.id),
-            "posted",
-            message_id=str(msg.id),
-            channel_id=str(channel.id),
+            str(confession.id), "posted",
+            message_id=str(msg.id), channel_id=str(channel.id),
         )
         await interaction.response.send_message(
             embed=discord.Embed(
@@ -329,8 +373,7 @@ class ConfessionsCog(commands.Cog):
         if not cfg.confession_mod_channel_id:
             await interaction.response.send_message(
                 embed=error_embed(
-                    "Le mode révision est activé mais aucun salon modération n'est configuré. "
-                    "Contacte un administrateur."
+                    "Le mode révision est activé mais aucun salon modération n'est configuré."
                 ),
                 ephemeral=True,
             )
@@ -343,16 +386,12 @@ class ConfessionsCog(commands.Cog):
             )
             return
 
-        # Récupérer le nom du salon confession pour le titre de l'embed
-        conf_channel = self.bot.get_channel(int(cfg.confession_channel_id))
-        channel_name = conf_channel.name if conf_channel else ""
-
+        channel_name = await self._get_channel_name(cfg)
         view = ReviewView(self, str(confession.id))
         await mod_channel.send(
             embed=confession_pending_embed(confession, channel_name=channel_name), view=view
         )
         self.bot.add_view(view)
-
         await interaction.response.send_message(
             embed=discord.Embed(
                 title="Confession soumise",
@@ -383,9 +422,7 @@ class ConfessionsCog(commands.Cog):
                 str(confession.id), guild_id, discord_id, content
             )
         except DatabaseError as exc:
-            await interaction.response.send_message(
-                embed=error_embed(str(exc)), ephemeral=True
-            )
+            await interaction.response.send_message(embed=error_embed(str(exc)), ephemeral=True)
             return
 
         cfg = await self.db.get_guild_config(guild_id)
@@ -406,7 +443,6 @@ class ConfessionsCog(commands.Cog):
 
         msg = await channel.send(embed=confession_reply_embed(reply, confession.number))
         await self.db.update_reply_message_id(str(reply.id), str(msg.id))
-
         await interaction.response.send_message(
             embed=discord.Embed(
                 title="Réponse envoyée",
@@ -447,15 +483,13 @@ class ConfessionsCog(commands.Cog):
         self.bot.add_view(view)
         await self.db.update_confession_status(
             confession_id, "posted",
-            message_id=str(msg.id),
-            channel_id=str(channel.id),
+            message_id=str(msg.id), channel_id=str(channel.id),
         )
 
-        conf_channel = self.bot.get_channel(int(cfg.confession_channel_id))
-        channel_name = conf_channel.name if conf_channel else ""
+        channel_name = await self._get_channel_name(cfg)
         approved_embed = confession_pending_embed(confession, channel_name=channel_name)
         approved_embed.set_footer(
-            text=f"Approuvée par {interaction.user} • #{confession.number} publié • The Clockmaster"
+            text=f"✅ Approuvée par {interaction.user} • #{confession.number} publié • The Clockmaster"
         )
         await interaction.response.edit_message(embed=approved_embed, view=None)
 
@@ -472,6 +506,7 @@ class ConfessionsCog(commands.Cog):
         reason: str | None = None,
         also_ban: bool = False,
         also_report: bool = False,
+        original_message: discord.Message | None = None,
     ) -> None:
         confession = await self.db.get_confession_by_id(confession_id)
         if not confession:
@@ -482,35 +517,37 @@ class ConfessionsCog(commands.Cog):
 
         await self.db.update_confession_status(confession_id, "rejected")
 
+        cfg = await self.db.get_guild_config(str(interaction.guild_id))
+
         if also_ban:
             await self.db.ban_confessor(
-                confession.guild_id,
-                confession.discord_id,
-                str(interaction.user.id),
+                confession.guild_id, confession.discord_id, str(interaction.user.id)
             )
 
-        cfg_r = await self.db.get_guild_config(str(interaction.guild_id))
-        if also_report and cfg_r and cfg_r.confession_mod_channel_id:
-            mod_channel = self.bot.get_channel(int(cfg_r.confession_mod_channel_id))
+        if also_report and cfg and cfg.confession_mod_channel_id:
+            mod_channel = self.bot.get_channel(int(cfg.confession_mod_channel_id))
             if mod_channel:
                 await mod_channel.send(
                     embed=confession_report_embed(confession, confession.discord_id)
                 )
 
-        # Construire le footer du message mod
-        action_parts = [f"Rejetée par {interaction.user}"]
+        action_parts = [f"❌ Rejetée par {interaction.user}"]
+        if reason:
+            action_parts.append("raison envoyée")
         if also_ban:
             action_parts.append("utilisateur banni")
         if also_report:
             action_parts.append("signalement envoyé")
-        channel_name = ""
-        if cfg_r and cfg_r.confession_channel_id:
-            ch = self.bot.get_channel(int(cfg_r.confession_channel_id))
-            channel_name = ch.name if ch else ""
 
+        channel_name = await self._get_channel_name(cfg)
         rejected_embed = confession_pending_embed(confession, channel_name=channel_name)
         rejected_embed.set_footer(text=" • ".join(action_parts) + " • The Clockmaster")
-        await interaction.response.edit_message(embed=rejected_embed, view=None)
+
+        # Éditer le message du salon mod — différent selon si on vient d'un bouton ou d'un modal
+        if original_message:
+            await original_message.edit(embed=rejected_embed, view=None)
+        else:
+            await interaction.response.edit_message(embed=rejected_embed, view=None)
 
         # DM à l'auteur
         dm_msg = "Ta confession a été refusée par les modérateurs."
@@ -528,17 +565,25 @@ class ConfessionsCog(commands.Cog):
     # /confess
     # ------------------------------------------------------------------
 
-    @app_commands.command(
-        name="confess",
-        description="Soumettre une confession anonyme.",
-    )
+    @app_commands.command(name="confess", description="Soumettre une confession anonyme.")
     async def confess(self, interaction: discord.Interaction) -> None:
-        cfg = await self.db.get_guild_config(str(interaction.guild_id))
+        guild_id = str(interaction.guild_id)
+        cfg = await self.db.get_guild_config(guild_id)
         if not cfg or not cfg.confession_channel_id:
             await interaction.response.send_message(
                 embed=error_embed(
                     "Les confessions ne sont pas configurées sur ce serveur.\n"
                     "Un administrateur doit utiliser `/confession setup`."
+                ),
+                ephemeral=True,
+            )
+            return
+        # Vérification du ban AVANT d'ouvrir le modal
+        if await self.db.is_confession_banned(guild_id, str(interaction.user.id)):
+            await interaction.response.send_message(
+                embed=error_embed(
+                    "Tu as été banni(e) des confessions sur ce serveur.\n"
+                    "Utilise `/recours` pour soumettre un recours."
                 ),
                 ephemeral=True,
             )
@@ -549,10 +594,7 @@ class ConfessionsCog(commands.Cog):
     # /reply <confession_id>
     # ------------------------------------------------------------------
 
-    @app_commands.command(
-        name="reply",
-        description="Répondre anonymement à une confession.",
-    )
+    @app_commands.command(name="reply", description="Répondre anonymement à une confession.")
     @app_commands.describe(
         confession_id="L'ID courte de la confession (visible dans le footer du message)"
     )
@@ -577,19 +619,115 @@ class ConfessionsCog(commands.Cog):
     # /report <confession_id>
     # ------------------------------------------------------------------
 
-    @app_commands.command(
-        name="report",
-        description="Signaler une confession aux modérateurs.",
-    )
+    @app_commands.command(name="report", description="Signaler une confession aux modérateurs.")
     @app_commands.describe(confession_id="L'ID courte de la confession à signaler")
     async def report(self, interaction: discord.Interaction, confession_id: str) -> None:
         guild_id = str(interaction.guild_id)
-        discord_id = str(interaction.user.id)
-
         confession = await self.db.get_confession_by_short_id(guild_id, confession_id.strip())
         if not confession:
             await interaction.response.send_message(
                 embed=error_embed(f"Aucune confession trouvée avec l'ID `{confession_id}`."),
+                ephemeral=True,
+            )
+            return
+        cfg = await self.db.get_guild_config(guild_id)
+        if not cfg or not cfg.confession_mod_channel_id:
+            await interaction.response.send_message(
+                embed=error_embed("Aucun salon de modération n'est configuré sur ce serveur."),
+                ephemeral=True,
+            )
+            return
+        mod_channel = self.bot.get_channel(int(cfg.confession_mod_channel_id))
+        if mod_channel is None:
+            await interaction.response.send_message(
+                embed=error_embed("Le salon modération est introuvable."), ephemeral=True
+            )
+            return
+        await mod_channel.send(embed=confession_report_embed(confession, str(interaction.user.id)))
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="Signalement envoyé",
+                description="Les modérateurs ont été notifiés.",
+                color=COLOR_GREEN,
+            ),
+            ephemeral=True,
+        )
+
+    # ------------------------------------------------------------------
+    # /supprimer <confession>
+    # ------------------------------------------------------------------
+
+    @app_commands.command(
+        name="supprimer",
+        description="Supprimer une confession (vous devez en être l'auteur).",
+    )
+    @app_commands.describe(confession="L'ID courte de la confession à supprimer")
+    async def supprimer(self, interaction: discord.Interaction, confession: str) -> None:
+        guild_id = str(interaction.guild_id)
+        discord_id = str(interaction.user.id)
+
+        conf_obj = await self.db.get_confession_by_short_id(guild_id, confession.strip())
+        if not conf_obj:
+            await interaction.response.send_message(
+                embed=error_embed(f"Aucune confession trouvée avec l'ID `{confession}`."),
+                ephemeral=True,
+            )
+            return
+        if conf_obj.discord_id != discord_id:
+            await interaction.response.send_message(
+                embed=error_embed("Tu n'es pas l'auteur de cette confession."),
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        # Tenter de supprimer le message Discord
+        if conf_obj.message_id and conf_obj.channel_id:
+            try:
+                channel = self.bot.get_channel(int(conf_obj.channel_id))
+                if channel:
+                    msg = await channel.fetch_message(int(conf_obj.message_id))
+                    await msg.delete()
+            except (discord.NotFound, discord.HTTPException):
+                pass
+
+        await self.db.delete_confession(str(conf_obj.id), discord_id)
+        await interaction.followup.send(
+            embed=discord.Embed(
+                title="Confession supprimée",
+                description=f"Ta confession #{conf_obj.number} a été supprimée.",
+                color=COLOR_DARK,
+            ),
+            ephemeral=True,
+        )
+
+    # ------------------------------------------------------------------
+    # /recours <raison_du_ban> <accepter> [message]
+    # ------------------------------------------------------------------
+
+    @app_commands.command(
+        name="recours",
+        description="Soumettre un recours contre un bannissement des confessions.",
+    )
+    @app_commands.describe(
+        raison_du_ban="La raison pour laquelle tu penses avoir été banni(e)",
+        accepter="Acceptes-tu la raison du bannissement ?",
+        message="Message supplémentaire pour les modérateurs (optionnel)",
+    )
+    async def recours(
+        self,
+        interaction: discord.Interaction,
+        raison_du_ban: str,
+        accepter: bool,
+        message: Optional[str] = None,
+    ) -> None:
+        guild_id = str(interaction.guild_id)
+        discord_id = str(interaction.user.id)
+
+        if not await self.db.is_confession_banned(guild_id, discord_id):
+            await interaction.response.send_message(
+                embed=error_embed("Tu n'es pas banni(e) des confessions sur ce serveur."),
                 ephemeral=True,
             )
             return
@@ -609,11 +747,30 @@ class ConfessionsCog(commands.Cog):
             )
             return
 
-        await mod_channel.send(embed=confession_report_embed(confession, discord_id))
+        embed = discord.Embed(
+            title="📨  Recours contre un bannissement",
+            color=0xF59E0B,
+        )
+        embed.add_field(
+            name="Utilisateur",
+            value=f"<@{discord_id}> (`{discord_id}`)",
+            inline=False,
+        )
+        embed.add_field(name="Raison du ban (selon l'utilisateur)", value=raison_du_ban, inline=False)
+        embed.add_field(
+            name="Accepte la raison",
+            value="✅ Oui" if accepter else "❌ Non",
+            inline=True,
+        )
+        if message:
+            embed.add_field(name="Message supplémentaire", value=message, inline=False)
+        embed.set_footer(text="Utilise /debanconfess utilisateur pour débannir • The Clockmaster")
+
+        await mod_channel.send(embed=embed)
         await interaction.response.send_message(
             embed=discord.Embed(
-                title="Signalement envoyé",
-                description="Les modérateurs ont été notifiés.",
+                title="Recours envoyé",
+                description="Les modérateurs ont été notifiés de ton recours.",
                 color=COLOR_GREEN,
             ),
             ephemeral=True,
@@ -623,10 +780,7 @@ class ConfessionsCog(commands.Cog):
     # /confession setup
     # ------------------------------------------------------------------
 
-    @confession_group.command(
-        name="setup",
-        description="Configurer le système de confessions.",
-    )
+    @confession_group.command(name="setup", description="Configurer le système de confessions.")
     @app_commands.describe(
         channel="Salon où publier les confessions",
         mod_channel="Salon modération pour les signalements et la révision (optionnel)",
@@ -644,27 +798,22 @@ class ConfessionsCog(commands.Cog):
                 embed=error_embed("Commande réservée aux administrateurs."), ephemeral=True
             )
             return
-
         await interaction.response.defer(ephemeral=True)
-
         updates: dict = {"confession_channel_id": str(channel.id)}
         if mod_channel is not None:
             updates["confession_mod_channel_id"] = str(mod_channel.id)
         if review_mode is not None:
             updates["confession_review_mode"] = review_mode
-
         try:
             await self.db.update_guild_config_keys(str(interaction.guild_id), updates)
         except DatabaseError as exc:
             await interaction.followup.send(embed=error_embed(str(exc)), ephemeral=True)
             return
-
         lines = [f"Salon confessions : {channel.mention}"]
         if mod_channel:
             lines.append(f"Salon modération : {mod_channel.mention}")
         if review_mode is not None:
             lines.append(f"Mode révision : {'✅ activé' if review_mode else '🚫 désactivé'}")
-
         embed = discord.Embed(
             title="Confessions configurées",
             description="\n".join(lines),
@@ -674,12 +823,15 @@ class ConfessionsCog(commands.Cog):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     # ------------------------------------------------------------------
-    # /confession ban
+    # /banconfess utilisateur / liste / nettoyer
     # ------------------------------------------------------------------
 
-    @confession_group.command(name="ban", description="Bannir un utilisateur des confessions.")
+    @banconfess_group.command(
+        name="utilisateur",
+        description="Bannir un utilisateur des confessions.",
+    )
     @app_commands.describe(user="Utilisateur à bannir")
-    async def confession_ban(
+    async def banconfess_utilisateur(
         self, interaction: discord.Interaction, user: discord.Member
     ) -> None:
         if not await is_admin(interaction, self.db):
@@ -698,39 +850,11 @@ class ConfessionsCog(commands.Cog):
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    # ------------------------------------------------------------------
-    # /confession unban
-    # ------------------------------------------------------------------
-
-    @confession_group.command(name="unban", description="Débannir un utilisateur des confessions.")
-    @app_commands.describe(user="Utilisateur à débannir")
-    async def confession_unban(
-        self, interaction: discord.Interaction, user: discord.Member
-    ) -> None:
-        if not await is_admin(interaction, self.db):
-            await interaction.response.send_message(
-                embed=error_embed("Commande réservée aux administrateurs."), ephemeral=True
-            )
-            return
-        await interaction.response.defer(ephemeral=True)
-        try:
-            await self.db.unban_confessor(str(interaction.guild_id), str(user.id))
-        except DatabaseError as exc:
-            await interaction.followup.send(embed=error_embed(str(exc)), ephemeral=True)
-            return
-        embed = discord.Embed(
-            title="Utilisateur débanni",
-            description=f"{user.mention} peut à nouveau soumettre des confessions.",
-            color=COLOR_GREEN,
-        )
-        await interaction.followup.send(embed=embed, ephemeral=True)
-
-    # ------------------------------------------------------------------
-    # /confession list-bans
-    # ------------------------------------------------------------------
-
-    @confession_group.command(name="list-bans", description="Lister les utilisateurs bannis des confessions.")
-    async def confession_list_bans(self, interaction: discord.Interaction) -> None:
+    @banconfess_group.command(
+        name="liste",
+        description="Lister les utilisateurs bloqués de soumettre des confessions.",
+    )
+    async def banconfess_liste(self, interaction: discord.Interaction) -> None:
         if not await is_admin(interaction, self.db):
             await interaction.response.send_message(
                 embed=error_embed("Commande réservée aux administrateurs."), ephemeral=True
@@ -760,6 +884,127 @@ class ConfessionsCog(commands.Cog):
         )
         embed.set_footer(text="The Clockmaster")
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @banconfess_group.command(
+        name="nettoyer",
+        description="Nettoyer la liste des bannissements en entière.",
+    )
+    async def banconfess_nettoyer(self, interaction: discord.Interaction) -> None:
+        if not await is_admin(interaction, self.db):
+            await interaction.response.send_message(
+                embed=error_embed("Commande réservée aux administrateurs."), ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        count = await self.db.clear_confession_bans(str(interaction.guild_id))
+        embed = discord.Embed(
+            title="Bannissements supprimés",
+            description=f"{count} bannissement(s) supprimé(s).",
+            color=COLOR_GREEN,
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    # ------------------------------------------------------------------
+    # /debanconfess utilisateur / confession
+    # ------------------------------------------------------------------
+
+    @debanconfess_group.command(
+        name="utilisateur",
+        description="Débannir un utilisateur spécifique des confessions.",
+    )
+    @app_commands.describe(user="Utilisateur à débannir")
+    async def debanconfess_utilisateur(
+        self, interaction: discord.Interaction, user: discord.Member
+    ) -> None:
+        if not await is_admin(interaction, self.db):
+            await interaction.response.send_message(
+                embed=error_embed("Commande réservée aux administrateurs."), ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await self.db.unban_confessor(str(interaction.guild_id), str(user.id))
+        except DatabaseError as exc:
+            await interaction.followup.send(embed=error_embed(str(exc)), ephemeral=True)
+            return
+        embed = discord.Embed(
+            title="Utilisateur débanni",
+            description=f"{user.mention} peut à nouveau soumettre des confessions.",
+            color=COLOR_GREEN,
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @debanconfess_group.command(
+        name="confession",
+        description="Débannir l'auteur d'une confession via son lien de message.",
+    )
+    @app_commands.describe(lien_message="Lien du message de la confession (clic droit → Copier le lien)")
+    async def debanconfess_confession(
+        self, interaction: discord.Interaction, lien_message: str
+    ) -> None:
+        if not await is_admin(interaction, self.db):
+            await interaction.response.send_message(
+                embed=error_embed("Commande réservée aux administrateurs."), ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        match = _MSG_LINK_RE.search(lien_message)
+        if not match:
+            await interaction.followup.send(
+                embed=error_embed("Lien de message invalide. Utilise le lien complet du message Discord."),
+                ephemeral=True,
+            )
+            return
+
+        message_id = match.group(1)
+        confession = await self.db.get_confession_by_message_id(
+            str(interaction.guild_id), message_id
+        )
+        if not confession:
+            await interaction.followup.send(
+                embed=error_embed("Aucune confession trouvée pour ce message."),
+                ephemeral=True,
+            )
+            return
+
+        try:
+            await self.db.unban_confessor(str(interaction.guild_id), confession.discord_id)
+        except DatabaseError:
+            await interaction.followup.send(
+                embed=error_embed("L'auteur de cette confession n'est pas banni."),
+                ephemeral=True,
+            )
+            return
+
+        embed = discord.Embed(
+            title="Utilisateur débanni",
+            description=f"L'auteur de la confession #{confession.number} a été débanni(e).",
+            color=COLOR_GREEN,
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    # ------------------------------------------------------------------
+    # Ancien groupe /confession (garde setup pour rétrocompat)
+    # ------------------------------------------------------------------
+
+    @confession_group.command(name="ban", description="Bannir un utilisateur des confessions.")
+    @app_commands.describe(user="Utilisateur à bannir")
+    async def confession_ban(
+        self, interaction: discord.Interaction, user: discord.Member
+    ) -> None:
+        await self.banconfess_utilisateur(interaction, user)
+
+    @confession_group.command(name="unban", description="Débannir un utilisateur des confessions.")
+    @app_commands.describe(user="Utilisateur à débannir")
+    async def confession_unban(
+        self, interaction: discord.Interaction, user: discord.Member
+    ) -> None:
+        await self.debanconfess_utilisateur(interaction, user)
+
+    @confession_group.command(name="list-bans", description="Lister les utilisateurs bannis des confessions.")
+    async def confession_list_bans(self, interaction: discord.Interaction) -> None:
+        await self.banconfess_liste(interaction)
 
 
 async def setup(bot: commands.Bot) -> None:

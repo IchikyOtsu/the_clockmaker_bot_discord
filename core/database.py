@@ -671,6 +671,37 @@ class DatabaseClient:
             .execute()
         )
 
+    async def clear_confession_bans(self, guild_id: str) -> int:
+        result = await (
+            self._client.table("confession_bans")
+            .delete()
+            .eq("guild_id", guild_id)
+            .execute()
+        )
+        return len(result.data) if result.data else 0
+
+    async def get_confession_by_message_id(self, guild_id: str, message_id: str) -> Confession | None:
+        result = await (
+            self._client.table("confessions")
+            .select("*")
+            .eq("guild_id", guild_id)
+            .eq("message_id", message_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return None
+        return Confession(**result.data[0])
+
+    async def delete_confession(self, confession_id: str, discord_id: str) -> None:
+        await (
+            self._client.table("confessions")
+            .delete()
+            .eq("id", confession_id)
+            .eq("discord_id", discord_id)
+            .execute()
+        )
+
     # ------------------------------------------------------------------
     # Tirage Cards
     # ------------------------------------------------------------------
