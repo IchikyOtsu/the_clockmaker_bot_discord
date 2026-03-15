@@ -442,6 +442,25 @@ class DatabaseClient:
             raise DatabaseError(f"Impossible d'ajouter le type « {nom} ».")
         return CardType.from_dict(result.data[0])
 
+    async def update_card_type(self, type_id: str, updates: dict) -> CardType:
+        """Update fields on a card type. Returns the refreshed record."""
+        await (
+            self._client.table("card_types")
+            .update(updates)
+            .eq("id", type_id)
+            .execute()
+        )
+        result = await (
+            self._client.table("card_types")
+            .select("*")
+            .eq("id", type_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Type introuvable après modification.")
+        return CardType.from_dict(result.data[0])
+
     async def remove_card_type(self, guild_id: str, nom: str) -> CardType:
         rows = await self.get_card_types(guild_id)
         target = next((t for t in rows if t.nom == nom), None)
@@ -545,6 +564,25 @@ class DatabaseClient:
         )
         return url
 
+    async def update_tirage_card(self, card_id: str, updates: dict) -> TirageCard:
+        """Update fields on a tirage card. Returns the refreshed card."""
+        await (
+            self._client.table("tirage_cards")
+            .update(updates)
+            .eq("id", card_id)
+            .execute()
+        )
+        result = await (
+            self._client.table("tirage_cards")
+            .select("*, card_types(nom)")
+            .eq("id", card_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Carte introuvable après modification.")
+        return TirageCard.from_dict(result.data[0])
+
     # ------------------------------------------------------------------
     # Défis
     # ------------------------------------------------------------------
@@ -600,6 +638,25 @@ class DatabaseClient:
             .execute()
         )
         return target
+
+    async def update_defi(self, defi_id: str, updates: dict) -> Defi:
+        """Update fields on a défi. Returns the refreshed record."""
+        await (
+            self._client.table("defis")
+            .update(updates)
+            .eq("id", defi_id)
+            .execute()
+        )
+        result = await (
+            self._client.table("defis")
+            .select("*")
+            .eq("id", defi_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Défi introuvable après modification.")
+        return Defi.from_dict(result.data[0])
 
     async def link_card_defi(self, card_id: str, defi_id: str) -> None:
         await (
