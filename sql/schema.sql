@@ -120,9 +120,9 @@ CREATE TABLE IF NOT EXISTS tarokka_suits (
 );
 
 CREATE TABLE IF NOT EXISTS tarokka_cards (
-    image_num   INT         PRIMARY KEY CHECK (image_num BETWEEN 1 AND 40),
+    image_num   INT         PRIMARY KEY CHECK (image_num BETWEEN 1 AND 54),
     suit_id     TEXT        NOT NULL REFERENCES tarokka_suits(id),
-    position    INT         NOT NULL CHECK (position BETWEEN 0 AND 9),
+    position    INT         NOT NULL CHECK (position BETWEEN 0 AND 13),
     card_label  TEXT        NOT NULL,  -- 'Master of Stars', 'One of Stars', etc.
     card_name   TEXT        NOT NULL,  -- 'Wizard', 'Transmuter', etc.
     represents  TEXT        NOT NULL

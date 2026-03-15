@@ -8,10 +8,11 @@ from models.tarokka import TarokkaCard
 from models.weather import WeatherType
 
 _SUIT_COLORS: dict[str, int] = {
-    "stars":  0x7B68EE,   # Violet arcane
-    "swords": 0xC0392B,   # Rouge sang
-    "coins":  0xC9A84C,   # Or
-    "glyphs": 0x27AE60,   # Vert foi
+    "stars":     0x7B68EE,   # Violet arcane
+    "swords":    0xC0392B,   # Rouge sang
+    "coins":     0xC9A84C,   # Or
+    "glyphs":    0x27AE60,   # Vert foi
+    "high_deck": 0xFFD700,   # Or royal — Haut Deck
 }
 
 COLOR_PINK  = 0xFF85A1   # Rose — anniversaires
