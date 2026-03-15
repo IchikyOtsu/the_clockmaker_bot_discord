@@ -5,6 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from core.database import DatabaseClient, DatabaseError, RaceNotFound
+from core.permissions import is_admin
 from ui.embeds import error_embed
 
 # Palette partagée
@@ -17,7 +18,6 @@ class RacesCog(commands.Cog):
     races = app_commands.Group(
         name="races",
         description="Gestion des races jouables.",
-        default_permissions=discord.Permissions(administrator=True),
     )
 
     def __init__(self, bot: commands.Bot) -> None:
@@ -76,6 +76,13 @@ class RacesCog(commands.Cog):
     @races.command(name="add", description="Ajouter une race (ou la réactiver).")
     @app_commands.describe(nom="Nom de la race à ajouter")
     async def races_add(self, interaction: discord.Interaction, nom: str) -> None:
+        if not await is_admin(interaction, self.db):
+            await interaction.response.send_message(
+                embed=error_embed("Tu n'as pas la permission d'utiliser cette commande."),
+                ephemeral=True,
+            )
+            return
+
         await interaction.response.defer(ephemeral=True)
 
         try:
@@ -99,6 +106,13 @@ class RacesCog(commands.Cog):
     @races.command(name="remove", description="Désactiver une race (soft-delete).")
     @app_commands.describe(nom="Nom de la race à désactiver")
     async def races_remove(self, interaction: discord.Interaction, nom: str) -> None:
+        if not await is_admin(interaction, self.db):
+            await interaction.response.send_message(
+                embed=error_embed("Tu n'as pas la permission d'utiliser cette commande."),
+                ephemeral=True,
+            )
+            return
+
         await interaction.response.defer(ephemeral=True)
 
         try:

@@ -9,21 +9,13 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from core.database import DatabaseClient, DatabaseError
+from core.permissions import is_admin
 from models.guild_config import GuildConfig
 from ui.embeds import error_embed, weather_embed
 
 COLOR_SKY   = 0x5B8CDB
 COLOR_GREEN = 0x2ECC71
 COLOR_DARK  = 0x1A1A2E
-
-
-async def _is_admin(interaction: discord.Interaction, db: DatabaseClient) -> bool:
-    """True if the user has an admin role from guild_config, or is a server administrator."""
-    config = await db.get_guild_config(str(interaction.guild_id))
-    if not config or not config.admin_role_ids:
-        return interaction.user.guild_permissions.administrator  # type: ignore[union-attr]
-    user_role_ids = {str(r.id) for r in interaction.user.roles}  # type: ignore[union-attr]
-    return bool(user_role_ids & set(config.admin_role_ids))
 
 
 class WeatherCog(commands.Cog):
@@ -189,7 +181,7 @@ class WeatherCog(commands.Cog):
         channel: discord.TextChannel,
         heure: int,
     ) -> None:
-        if not await _is_admin(interaction, self.db):
+        if not await is_admin(interaction, self.db):
             await interaction.response.send_message(
                 embed=error_embed("Tu n'as pas la permission d'utiliser cette commande."),
                 ephemeral=True,
@@ -254,7 +246,7 @@ class WeatherCog(commands.Cog):
         emoji: str,
         poids: int,
     ) -> None:
-        if not await _is_admin(interaction, self.db):
+        if not await is_admin(interaction, self.db):
             await interaction.response.send_message(
                 embed=error_embed("Tu n'as pas la permission d'utiliser cette commande."),
                 ephemeral=True,
@@ -296,7 +288,7 @@ class WeatherCog(commands.Cog):
     @app_commands.command(name="del-meteo", description="Supprimer un type de météo.")
     @app_commands.describe(id="ID courte de la météo (visible avec /list-meteo)")
     async def del_meteo(self, interaction: discord.Interaction, id: str) -> None:
-        if not await _is_admin(interaction, self.db):
+        if not await is_admin(interaction, self.db):
             await interaction.response.send_message(
                 embed=error_embed("Tu n'as pas la permission d'utiliser cette commande."),
                 ephemeral=True,
