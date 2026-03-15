@@ -34,7 +34,8 @@ class HelpCog(commands.Cog):
         embed.add_field(
             name="🃏  Tarokka",
             value=_field([
-                ("/tarokka [carte]", "Consulter le deck Tarokka (carte aléatoire ou recherche)"),
+                ("/tirage",          "Effectuer un tirage Tarokka (3 communes + 2 Haut Deck)"),
+                ("/tarokka [carte]", "Parcourir le deck Tarokka"),
             ]),
             inline=False,
         )

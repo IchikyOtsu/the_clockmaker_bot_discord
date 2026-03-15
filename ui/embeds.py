@@ -155,6 +155,43 @@ def birthday_embed(character: Character) -> discord.Embed:
     return embed
 
 
+_READING_POSITIONS = ["🕘  9h", "🕛  12h", "🕒  3h", "🕖  6h", "✦  Centre"]
+
+
+def tirage_summary_embed(cards: list) -> discord.Embed:
+    """Overview embed for a 5-card Tarokka reading."""
+    embed = discord.Embed(
+        title="✦  Tirage Tarokka",
+        description="Cinq cartes ont été tirées. Utilise **▶** pour les voir en détail.",
+        color=COLOR_DARK,
+    )
+    for pos, card in zip(_READING_POSITIONS, cards):
+        deck = "Haut Deck" if card.suit_id == "high_deck" else card.suit_name
+        embed.add_field(
+            name=pos,
+            value=f"**{card.card_label}**\n*{card.card_name}*\n{deck}",
+            inline=True,
+        )
+    embed.set_footer(text="Tarokka • The Clockmaster")
+    return embed
+
+
+def tirage_card_embed(card, position_label: str, card_num: int) -> discord.Embed:
+    """Detailed embed for a single card in a reading, with its position label."""
+    color = _SUIT_COLORS.get(card.suit_id, COLOR_DARK)
+    embed = discord.Embed(
+        title=f"{position_label}  —  {card.card_label}",
+        description=f"**{card.card_name}**\n\n*{card.represents}*",
+        color=color,
+    )
+    embed.add_field(name="Suite", value=card.suit_name, inline=True)
+    embed.set_image(url=card.image_url)
+    embed.set_footer(
+        text=f"Carte {card_num} / 5 • Tarokka • {card.suit_name} — {card.suit_description[:100]}…"
+    )
+    return embed
+
+
 def weather_embed(weather: WeatherType, today: date, is_new: bool) -> discord.Embed:
     """Embed météo du jour pour /meteo."""
     embed = discord.Embed(
