@@ -25,7 +25,7 @@ class HelpCog(commands.Cog):
             value=_field([
                 ("/create characters", "Créer ton personnage"),
                 ("/profil [nom]",       "Consulter le profil d'un personnage"),
-                ("/editchara",          "Modifier ton personnage (nom, espèce, avatar…)"),
+                ("/editchara",          "Modifier ton personnage (nom, espèce, karma, avatar…)"),
                 ("/switch",             "Changer de personnage actif"),
             ]),
             inline=False,

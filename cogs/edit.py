@@ -64,6 +64,7 @@ class EditCog(commands.Cog):
         anniversaire="Date de naissance au format JJ/MM/AAAA (recalcule l'âge)",
         espece="Nouvelle espèce",
         avatar="Nouvelle photo de profil (JPG ou PNG)",
+        karma="Nouvelle valeur de karma (-100 à 100)",
     )
     async def editchara(
         self,
@@ -75,9 +76,10 @@ class EditCog(commands.Cog):
         anniversaire: Optional[str] = None,
         espece: Optional[str] = None,
         avatar: Optional[discord.Attachment] = None,
+        karma: Optional[int] = None,
     ) -> None:
         # -- Require at least one field -----------------------------------
-        if all(p is None for p in (nom, prenom, metier, faceclaim, anniversaire, espece, avatar)):
+        if all(p is None for p in (nom, prenom, metier, faceclaim, anniversaire, espece, avatar, karma)):
             await interaction.response.send_message(
                 embed=error_embed("Spécifie au moins un champ à modifier."),
                 ephemeral=True,
@@ -143,6 +145,16 @@ class EditCog(commands.Cog):
             espece = espece.strip()
             if espece and espece != character.espece:
                 updates["espece"] = espece
+
+        if karma is not None:
+            if not (-100 <= karma <= 100):
+                await interaction.followup.send(
+                    embed=error_embed("Le karma doit être compris entre -100 et 100."),
+                    ephemeral=True,
+                )
+                return
+            if karma != character.karma:
+                updates["karma"] = karma
 
         # -- Process avatar -----------------------------------------------
         if avatar is not None:

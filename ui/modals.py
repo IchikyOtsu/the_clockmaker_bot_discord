@@ -46,6 +46,12 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
         max_length=500,
         required=True,
     )
+    karma = discord.ui.TextInput(
+        label="Karma (optionnel, -100 à 100)",
+        placeholder="0",
+        max_length=5,
+        required=False,
+    )
 
     def __init__(self, db: DatabaseClient, espece: str, race_id: uuid.UUID, guild_id: str) -> None:
         super().__init__()
@@ -90,6 +96,25 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
             )
             return
 
+        # Parse optional karma
+        karma_raw = self.karma.value.strip()
+        karma_value = 0
+        if karma_raw:
+            try:
+                karma_value = int(karma_raw)
+            except ValueError:
+                await interaction.response.send_message(
+                    embed=error_embed("Le karma doit être un entier entre -100 et 100."),
+                    ephemeral=True,
+                )
+                return
+            if not (-100 <= karma_value <= 100):
+                await interaction.response.send_message(
+                    embed=error_embed("Le karma doit être compris entre -100 et 100."),
+                    ephemeral=True,
+                )
+                return
+
         await interaction.response.defer(ephemeral=True)
 
         try:
@@ -104,6 +129,7 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
                     "age": age_value,
                     "date_naissance": date_iso,
                     "faceclaim": self.faceclaim.value.strip(),
+                    "karma": karma_value,
                 },
             )
         except DatabaseError as exc:
