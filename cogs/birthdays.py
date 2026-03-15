@@ -97,7 +97,9 @@ class BirthdaysCog(commands.Cog):
             )
             if already_wished:
                 continue
-            await self.db.log_birthday_wish(str(character.id), current_year)
+            await self.db.log_birthday_wish(
+                str(character.id), current_year, character.date_naissance
+            )
             await channel.send(embed=birthday_embed(character))
 
     # ------------------------------------------------------------------

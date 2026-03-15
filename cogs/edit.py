@@ -59,10 +59,9 @@ class EditCog(commands.Cog):
     @app_commands.describe(
         nom="Nouveau nom de famille",
         prenom="Nouveau prénom",
-        age="Nouvel âge (entier entre 1 et 9999)",
         metier="Nouveau métier (tape - pour effacer)",
         faceclaim="Nouveau faceclaim (URL ou description)",
-        anniversaire="Date d'anniversaire au format JJ/MM/AAAA",
+        anniversaire="Date de naissance au format JJ/MM/AAAA (recalcule l'âge)",
         espece="Nouvelle espèce",
         avatar="Nouvelle photo de profil (JPG ou PNG)",
     )
@@ -71,7 +70,6 @@ class EditCog(commands.Cog):
         interaction: discord.Interaction,
         nom: Optional[str] = None,
         prenom: Optional[str] = None,
-        age: Optional[int] = None,
         metier: Optional[str] = None,
         faceclaim: Optional[str] = None,
         anniversaire: Optional[str] = None,
@@ -79,17 +77,9 @@ class EditCog(commands.Cog):
         avatar: Optional[discord.Attachment] = None,
     ) -> None:
         # -- Require at least one field -----------------------------------
-        if all(p is None for p in (nom, prenom, age, metier, faceclaim, anniversaire, espece, avatar)):
+        if all(p is None for p in (nom, prenom, metier, faceclaim, anniversaire, espece, avatar)):
             await interaction.response.send_message(
                 embed=error_embed("Spécifie au moins un champ à modifier."),
-                ephemeral=True,
-            )
-            return
-
-        # -- Validate before defer (can still call send_message) ----------
-        if age is not None and not (1 <= age <= 9999):
-            await interaction.response.send_message(
-                embed=error_embed("L'âge doit être un entier entre 1 et 9999."),
                 ephemeral=True,
             )
             return
@@ -135,9 +125,6 @@ class EditCog(commands.Cog):
             prenom = prenom.strip()
             if prenom and prenom != character.prenom:
                 updates["prenom"] = prenom
-
-        if age is not None and age != character.age:
-            updates["age"] = age
 
         if metier is not None:
             new_metier = None if metier.strip() == "-" else metier.strip() or None

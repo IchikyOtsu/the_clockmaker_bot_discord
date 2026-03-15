@@ -11,10 +11,11 @@ class RaceSelectView(discord.ui.View):
         super().__init__(timeout=120)
         self._db = db
         self._guild_id = guild_id
+        self._races = races
 
         select = discord.ui.Select(
             placeholder="Choisis ta race…",
-            options=[discord.SelectOption(label=r.nom, value=r.nom) for r in races[:25]],
+            options=[discord.SelectOption(label=r.nom, value=str(r.id)) for r in races[:25]],
             min_values=1,
             max_values=1,
         )
@@ -22,14 +23,23 @@ class RaceSelectView(discord.ui.View):
         self.add_item(select)
 
     async def _on_race_selected(self, interaction: discord.Interaction) -> None:
-        espece = interaction.data["values"][0]
-        modal = CreateCharacterModal(db=self._db, espece=espece, guild_id=self._guild_id)
+        selected_id = interaction.data["values"][0]
+        race = next((r for r in self._races if str(r.id) == selected_id), None)
+        if race is None:
+            from ui.embeds import error_embed
+            await interaction.response.send_message(
+                embed=error_embed("Race introuvable."), ephemeral=True
+            )
+            return
+        modal = CreateCharacterModal(
+            db=self._db, espece=race.nom, race_id=race.id, guild_id=self._guild_id
+        )
         await interaction.response.send_modal(modal)
         self.stop()
 
 
 class RaceUpdateView(discord.ui.View):
-    """Race dropdown for /edit espece — updates the existing character."""
+    """Race dropdown for /editchara espece — updates the existing character."""
 
     def __init__(
         self,
@@ -42,10 +52,11 @@ class RaceUpdateView(discord.ui.View):
         self._db = db
         self._discord_id = discord_id
         self._guild_id = guild_id
+        self._races = races
 
         select = discord.ui.Select(
             placeholder="Choisis la nouvelle race…",
-            options=[discord.SelectOption(label=r.nom, value=r.nom) for r in races[:25]],
+            options=[discord.SelectOption(label=r.nom, value=str(r.id)) for r in races[:25]],
             min_values=1,
             max_values=1,
         )
@@ -56,11 +67,20 @@ class RaceUpdateView(discord.ui.View):
         from ui.embeds import character_updated_embed, error_embed
         from core.database import DatabaseError
 
-        espece = interaction.data["values"][0]
+        selected_id = interaction.data["values"][0]
+        race = next((r for r in self._races if str(r.id) == selected_id), None)
+        if race is None:
+            await interaction.response.send_message(
+                embed=error_embed("Race introuvable."), ephemeral=True
+            )
+            return
+
         await interaction.response.defer(ephemeral=True)
         try:
-            character = await self._db.update_character_field(
-                self._discord_id, self._guild_id, "espece", espece
+            character = await self._db.update_character_fields(
+                self._discord_id,
+                self._guild_id,
+                {"espece": race.nom, "race_id": str(race.id)},
             )
         except DatabaseError as exc:
             await interaction.followup.send(embed=error_embed(str(exc)), ephemeral=True)

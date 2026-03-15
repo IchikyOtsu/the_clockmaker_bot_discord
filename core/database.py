@@ -5,7 +5,7 @@ from typing import Optional
 
 from supabase import acreate_client, AsyncClient
 
-from models.character import Character
+from models.character import Character, _compute_age
 from models.guild_config import GuildConfig
 from models.race import Race
 from models.tarokka import TarokkaCard
@@ -24,9 +24,9 @@ class RaceNotFound(DatabaseError):
     pass
 
 
-# Fields that can be updated via /edit
+# Fields that can be updated (age is internal-only; race_id updated alongside espece)
 EDITABLE_FIELDS = frozenset({
-    "nom", "prenom", "espece", "age", "date_naissance", "faceclaim", "metier", "avatar_url"
+    "nom", "prenom", "espece", "race_id", "age", "date_naissance", "faceclaim", "metier", "avatar_url"
 })
 
 AVATAR_BUCKET = "avatars"
@@ -72,6 +72,7 @@ class DatabaseClient:
             "nom": data["nom"],
             "prenom": data["prenom"],
             "espece": data["espece"],
+            "race_id": data.get("race_id"),
             "age": data["age"],
             "date_naissance": data.get("date_naissance"),
             "faceclaim": data["faceclaim"],
@@ -146,10 +147,14 @@ class DatabaseClient:
     async def update_character_fields(
         self, discord_id: str, guild_id: str, updates: dict
     ) -> Character:
-        """Update one or more fields on the player's character in a single query."""
+        """Update one or more fields on the player's character in a single query.
+        Automatically recomputes and caches age when date_naissance is updated."""
         invalid = set(updates.keys()) - EDITABLE_FIELDS
         if invalid:
             raise DatabaseError(f"Champs non modifiables : {', '.join(invalid)}")
+        # Auto-refresh cached age when birth date changes
+        if "date_naissance" in updates and updates["date_naissance"]:
+            updates = {**updates, "age": _compute_age(updates["date_naissance"])}
         result = await (
             self._client.table("characters")
             .update(updates)
@@ -417,8 +422,11 @@ class DatabaseClient:
     # Birthdays
     # ------------------------------------------------------------------
 
-    async def log_birthday_wish(self, character_id: str, year: int) -> None:
-        """Mark a character's birthday as wished for the given year (idempotent)."""
+    async def log_birthday_wish(
+        self, character_id: str, year: int, date_naissance: str | None = None
+    ) -> None:
+        """Mark a character's birthday as wished for the given year (idempotent).
+        If date_naissance is provided, also refreshes the cached age column."""
         await (
             self._client.table("birthday_log")
             .upsert(
@@ -428,6 +436,14 @@ class DatabaseClient:
             )
             .execute()
         )
+        if date_naissance:
+            new_age = _compute_age(date_naissance)
+            await (
+                self._client.table("characters")
+                .update({"age": new_age})
+                .eq("id", character_id)
+                .execute()
+            )
 
     async def add_weather_type(
         self, nom: str, description: str, emoji: str, poids: int

@@ -1,6 +1,10 @@
+import uuid
+
 import discord
 from datetime import datetime
+
 from core.database import DatabaseClient, DatabaseError
+from models.character import _compute_age
 from ui.embeds import character_created_embed, error_embed
 
 
@@ -28,16 +32,11 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
         placeholder="Ex : Élise",
         max_length=100,
     )
-    age = discord.ui.TextInput(
-        label="Âge",
-        placeholder="Ex : 27",
-        max_length=5,
-    )
     date_naissance = discord.ui.TextInput(
         label="Date de naissance (JJ/MM/AAAA)",
         placeholder="Ex : 14/03/1998",
         max_length=10,
-        required=False,
+        required=True,
     )
     faceclaim = discord.ui.TextInput(
         label="Faceclaim (URL d'image ou description)",
@@ -47,31 +46,46 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
         required=True,
     )
 
-    def __init__(self, db: DatabaseClient, espece: str, guild_id: str) -> None:
+    def __init__(self, db: DatabaseClient, espece: str, race_id: uuid.UUID, guild_id: str) -> None:
         super().__init__()
         self._db = db
         self._espece = espece
+        self._race_id = race_id
         self._guild_id = guild_id
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        # Validate age
-        try:
-            age_value = int(self.age.value.strip())
-            if age_value <= 0 or age_value >= 10000:
-                raise ValueError
-        except ValueError:
-            await interaction.response.send_message(
-                embed=error_embed("L'âge doit être un nombre entier positif (entre 1 et 9999)."),
-                ephemeral=True,
-            )
-            return
-
-        # Validate date
+        # Parse date
         try:
             date_iso = _parse_date(self.date_naissance.value)
         except ValueError as exc:
             await interaction.response.send_message(
                 embed=error_embed(str(exc)), ephemeral=True
+            )
+            return
+
+        if not date_iso:
+            await interaction.response.send_message(
+                embed=error_embed("La date de naissance est obligatoire."),
+                ephemeral=True,
+            )
+            return
+
+        # Compute age from birth date
+        try:
+            age_value = _compute_age(date_iso)
+        except Exception:
+            await interaction.response.send_message(
+                embed=error_embed("Impossible de calculer l'âge depuis la date fournie."),
+                ephemeral=True,
+            )
+            return
+
+        if age_value <= 0 or age_value >= 10000:
+            await interaction.response.send_message(
+                embed=error_embed(
+                    "L'âge calculé est hors limites (1–9999). Vérifie la date de naissance."
+                ),
+                ephemeral=True,
             )
             return
 
@@ -85,6 +99,7 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
                     "nom": self.nom.value.strip(),
                     "prenom": self.prenom.value.strip(),
                     "espece": self._espece,
+                    "race_id": str(self._race_id),
                     "age": age_value,
                     "date_naissance": date_iso,
                     "faceclaim": self.faceclaim.value.strip(),
