@@ -131,6 +131,36 @@ class DatabaseClient:
         )
         if result.data:
             return Character.from_dict(result.data[0])
+
+        # Tentatives combinées si l'input contient des espaces (ex: "Dimitri Kazakov")
+        words = name.split()
+        if len(words) >= 2:
+            first, last = words[0], " ".join(words[1:])
+
+            result = await (
+                self._client.table("characters")
+                .select("*")
+                .eq("guild_id", guild_id)
+                .ilike("prenom", f"%{first}%")
+                .ilike("nom", f"%{last}%")
+                .limit(1)
+                .execute()
+            )
+            if result.data:
+                return Character.from_dict(result.data[0])
+
+            result = await (
+                self._client.table("characters")
+                .select("*")
+                .eq("guild_id", guild_id)
+                .ilike("nom", f"%{first}%")
+                .ilike("prenom", f"%{last}%")
+                .limit(1)
+                .execute()
+            )
+            if result.data:
+                return Character.from_dict(result.data[0])
+
         return None
 
     async def list_characters(self, discord_id: str, guild_id: str) -> list[Character]:
