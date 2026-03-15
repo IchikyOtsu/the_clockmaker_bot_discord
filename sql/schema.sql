@@ -1,14 +1,17 @@
 -- =============================================================
 -- The Clockmaster Bot — Supabase Schema
+-- Players and characters are scoped per guild (discord server).
 -- =============================================================
 
--- Players: one row per Discord user
+-- Players: one row per (discord_user, guild) pair
 CREATE TABLE IF NOT EXISTS players (
-    discord_id   TEXT        PRIMARY KEY,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    discord_id TEXT        NOT NULL,
+    guild_id   TEXT        NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (discord_id, guild_id)
 );
 
--- Races: predefined list managed by staff
+-- Races: global list managed by staff (not per-guild)
 CREATE TABLE IF NOT EXISTS races (
     id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     nom        TEXT        NOT NULL UNIQUE,
@@ -16,10 +19,11 @@ CREATE TABLE IF NOT EXISTS races (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Characters: one per player (UNIQUE discord_id enforces 1-character limit)
+-- Characters: one per (discord_user, guild) pair
 CREATE TABLE IF NOT EXISTS characters (
     id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    discord_id   TEXT        NOT NULL UNIQUE REFERENCES players(discord_id) ON DELETE CASCADE,
+    discord_id   TEXT        NOT NULL,
+    guild_id     TEXT        NOT NULL,
     nom          TEXT        NOT NULL,
     prenom       TEXT        NOT NULL,
     espece       TEXT        NOT NULL,
@@ -28,7 +32,13 @@ CREATE TABLE IF NOT EXISTS characters (
     metier       TEXT,
     is_active    BOOLEAN     NOT NULL DEFAULT TRUE,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- 1 character per player per guild
+    UNIQUE (discord_id, guild_id),
+    CONSTRAINT fk_player
+        FOREIGN KEY (discord_id, guild_id)
+        REFERENCES players(discord_id, guild_id)
+        ON DELETE CASCADE
 );
 
 -- Trigger: auto-update updated_at on row change
@@ -48,6 +58,7 @@ CREATE TRIGGER characters_updated_at
 -- RPC: atomic character switch (kept for future multi-character support)
 CREATE OR REPLACE FUNCTION switch_active_character(
     p_discord_id   TEXT,
+    p_guild_id     TEXT,
     p_character_id UUID
 )
 RETURNS SETOF characters
@@ -55,12 +66,13 @@ LANGUAGE plpgsql AS $$
 BEGIN
     UPDATE characters
     SET is_active = FALSE
-    WHERE discord_id = p_discord_id;
+    WHERE discord_id = p_discord_id AND guild_id = p_guild_id;
 
     UPDATE characters
     SET is_active = TRUE
     WHERE id = p_character_id
-      AND discord_id = p_discord_id;
+      AND discord_id = p_discord_id
+      AND guild_id = p_guild_id;
 
     RETURN QUERY
         SELECT * FROM characters

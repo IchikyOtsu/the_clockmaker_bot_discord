@@ -31,11 +31,14 @@ class DatabaseClient:
     # Players
     # ------------------------------------------------------------------
 
-    async def ensure_player(self, discord_id: str) -> None:
+    async def ensure_player(self, discord_id: str, guild_id: str) -> None:
         """Create a player row if it doesn't exist yet."""
         await (
             self._client.table("players")
-            .upsert({"discord_id": discord_id}, on_conflict="discord_id")
+            .upsert(
+                {"discord_id": discord_id, "guild_id": guild_id},
+                on_conflict="discord_id,guild_id",
+            )
             .execute()
         )
 
@@ -43,19 +46,20 @@ class DatabaseClient:
     # Characters
     # ------------------------------------------------------------------
 
-    async def create_character(self, discord_id: str, data: dict) -> Character:
+    async def create_character(self, discord_id: str, guild_id: str, data: dict) -> Character:
         """
-        Insert a new character for the given Discord user.
-        Raises DatabaseError if the user already has a character.
+        Insert a new character for the given Discord user in a specific guild.
+        Raises DatabaseError if the user already has a character in that guild.
         """
-        await self.ensure_player(discord_id)
+        await self.ensure_player(discord_id, guild_id)
 
-        count = await self.count_characters(discord_id)
+        count = await self.count_characters(discord_id, guild_id)
         if count >= 1:
             raise DatabaseError("Tu as déjà un personnage. Un seul personnage est autorisé par compte.")
 
         payload = {
             "discord_id": discord_id,
+            "guild_id": guild_id,
             "nom": data["nom"],
             "prenom": data["prenom"],
             "espece": data["espece"],
@@ -70,22 +74,24 @@ class DatabaseClient:
             raise DatabaseError("Échec de la création du personnage.")
         return Character.from_dict(result.data[0])
 
-    async def count_characters(self, discord_id: str) -> int:
-        """Return the number of characters owned by a player."""
+    async def count_characters(self, discord_id: str, guild_id: str) -> int:
+        """Return the number of characters owned by a player in a guild."""
         result = await (
             self._client.table("characters")
             .select("id", count="exact")
             .eq("discord_id", discord_id)
+            .eq("guild_id", guild_id)
             .execute()
         )
         return result.count or 0
 
-    async def get_active_character(self, discord_id: str) -> Optional[Character]:
-        """Return the currently active character for a player, or None."""
+    async def get_active_character(self, discord_id: str, guild_id: str) -> Optional[Character]:
+        """Return the active character for a player in a guild, or None."""
         result = await (
             self._client.table("characters")
             .select("*")
             .eq("discord_id", discord_id)
+            .eq("guild_id", guild_id)
             .eq("is_active", True)
             .limit(1)
             .execute()
@@ -94,14 +100,15 @@ class DatabaseClient:
             return None
         return Character.from_dict(result.data[0])
 
-    async def get_character_by_name(self, name: str) -> Optional[Character]:
+    async def get_character_by_name(self, name: str, guild_id: str) -> Optional[Character]:
         """
-        Search for a character by partial nom or prenom (case-insensitive).
+        Search for a character by partial nom or prenom within a guild.
         Returns the first match found.
         """
         result = await (
             self._client.table("characters")
             .select("*")
+            .eq("guild_id", guild_id)
             .ilike("nom", f"%{name}%")
             .limit(1)
             .execute()
@@ -112,6 +119,7 @@ class DatabaseClient:
         result = await (
             self._client.table("characters")
             .select("*")
+            .eq("guild_id", guild_id)
             .ilike("prenom", f"%{name}%")
             .limit(1)
             .execute()
@@ -121,22 +129,29 @@ class DatabaseClient:
 
         return None
 
-    async def list_characters(self, discord_id: str) -> list[Character]:
-        """Return all characters belonging to a player."""
+    async def list_characters(self, discord_id: str, guild_id: str) -> list[Character]:
+        """Return all characters belonging to a player in a guild."""
         result = await (
             self._client.table("characters")
             .select("*")
             .eq("discord_id", discord_id)
+            .eq("guild_id", guild_id)
             .order("created_at")
             .execute()
         )
         return [Character.from_dict(row) for row in result.data]
 
-    async def switch_active_character(self, discord_id: str, character_id: str) -> Character:
+    async def switch_active_character(
+        self, discord_id: str, guild_id: str, character_id: str
+    ) -> Character:
         """Atomically set the given character as active (via Postgres RPC)."""
         result = await self._client.rpc(
             "switch_active_character",
-            {"p_discord_id": discord_id, "p_character_id": character_id},
+            {
+                "p_discord_id": discord_id,
+                "p_guild_id": guild_id,
+                "p_character_id": character_id,
+            },
         ).execute()
         if not result.data:
             raise CharacterNotFound(f"Personnage introuvable : {character_id}")

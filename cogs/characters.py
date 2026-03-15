@@ -13,10 +13,17 @@ from ui.views import RaceSelectView
 class SwitchView(discord.ui.View):
     """Dropdown UI for /switch — lets the player pick their active character."""
 
-    def __init__(self, characters: list[Character], db: DatabaseClient, discord_id: str) -> None:
+    def __init__(
+        self,
+        characters: list[Character],
+        db: DatabaseClient,
+        discord_id: str,
+        guild_id: str,
+    ) -> None:
         super().__init__(timeout=60)
         self._db = db
         self._discord_id = discord_id
+        self._guild_id = guild_id
 
         options = [
             discord.SelectOption(
@@ -41,7 +48,9 @@ class SwitchView(discord.ui.View):
         character_id = interaction.data["values"][0]
         await interaction.response.defer(ephemeral=True)
         try:
-            character = await self._db.switch_active_character(self._discord_id, character_id)
+            character = await self._db.switch_active_character(
+                self._discord_id, self._guild_id, character_id
+            )
         except (CharacterNotFound, DatabaseError) as exc:
             await interaction.followup.send(embed=error_embed(str(exc)), ephemeral=True)
             return
@@ -71,7 +80,9 @@ class CharactersCog(commands.Cog):
     async def create_characters(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
-        if await self.db.count_characters(str(interaction.user.id)) >= 1:
+        guild_id = str(interaction.guild_id)
+
+        if await self.db.count_characters(str(interaction.user.id), guild_id) >= 1:
             await interaction.followup.send(
                 embed=error_embed("Tu as déjà un personnage. Tu ne peux en avoir qu'un seul."),
                 ephemeral=True,
@@ -87,7 +98,7 @@ class CharactersCog(commands.Cog):
             )
             return
 
-        view = RaceSelectView(races=races, db=self.db)
+        view = RaceSelectView(races=races, db=self.db, guild_id=guild_id)
         await interaction.followup.send(
             content="**Étape 1/2** — Choisis la race de ton personnage :",
             view=view,
@@ -95,17 +106,15 @@ class CharactersCog(commands.Cog):
         )
 
     # ------------------------------------------------------------------
-    # /switch  (kept for future multi-character support)
+    # /switch
     # ------------------------------------------------------------------
 
-    @app_commands.command(
-        name="switch",
-        description="Changer de personnage actif.",
-    )
+    @app_commands.command(name="switch", description="Changer de personnage actif.")
     async def switch(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
-        characters = await self.db.list_characters(str(interaction.user.id))
+        guild_id = str(interaction.guild_id)
+        characters = await self.db.list_characters(str(interaction.user.id), guild_id)
 
         if not characters:
             await interaction.followup.send(
@@ -126,7 +135,7 @@ class CharactersCog(commands.Cog):
             )
             return
 
-        view = SwitchView(characters, self.db, str(interaction.user.id))
+        view = SwitchView(characters, self.db, str(interaction.user.id), guild_id)
         await interaction.followup.send(
             content="Quel personnage veux-tu jouer ?",
             view=view,

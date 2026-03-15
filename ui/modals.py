@@ -27,13 +27,13 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
         required=True,
     )
 
-    def __init__(self, db: DatabaseClient, espece: str) -> None:
+    def __init__(self, db: DatabaseClient, espece: str, guild_id: str) -> None:
         super().__init__()
         self._db = db
         self._espece = espece
+        self._guild_id = guild_id
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        # Validate age
         try:
             age_value = int(self.age.value.strip())
             if age_value <= 0 or age_value >= 10000:
@@ -50,6 +50,7 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
         try:
             character = await self._db.create_character(
                 discord_id=str(interaction.user.id),
+                guild_id=self._guild_id,
                 data={
                     "nom": self.nom.value.strip(),
                     "prenom": self.prenom.value.strip(),
@@ -59,16 +60,10 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
                 },
             )
         except DatabaseError as exc:
-            await interaction.followup.send(
-                embed=error_embed(str(exc)),
-                ephemeral=True,
-            )
+            await interaction.followup.send(embed=error_embed(str(exc)), ephemeral=True)
             return
 
-        await interaction.followup.send(
-            embed=character_created_embed(character),
-            ephemeral=True,
-        )
+        await interaction.followup.send(embed=character_created_embed(character), ephemeral=True)
 
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
         msg = "Une erreur inattendue est survenue. Réessaie plus tard."

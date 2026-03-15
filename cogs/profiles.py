@@ -18,10 +18,6 @@ class ProfilesCog(commands.Cog):
     def db(self) -> DatabaseClient:
         return self.bot.db  # type: ignore[attr-defined]
 
-    # ------------------------------------------------------------------
-    # /profil
-    # ------------------------------------------------------------------
-
     @app_commands.command(
         name="profil",
         description="Afficher la fiche système d'un personnage.",
@@ -36,23 +32,21 @@ class ProfilesCog(commands.Cog):
     ) -> None:
         await interaction.response.defer()
 
+        guild_id = str(interaction.guild_id)
+
         if nom:
-            character = await self.db.get_character_by_name(nom.strip())
+            character = await self.db.get_character_by_name(nom.strip(), guild_id)
             if character is None:
                 await interaction.followup.send(
-                    embed=error_embed(
-                        f"Aucun personnage trouvé pour le nom **{nom}**."
-                    ),
+                    embed=error_embed(f"Aucun personnage trouvé pour le nom **{nom}**."),
                     ephemeral=True,
                 )
                 return
         else:
-            character = await self.db.get_active_character(str(interaction.user.id))
+            character = await self.db.get_active_character(str(interaction.user.id), guild_id)
             if character is None:
                 await interaction.followup.send(
-                    embed=error_embed(
-                        "Tu n'as pas encore de personnage."
-                    ),
+                    embed=error_embed("Tu n'as pas encore de personnage."),
                     ephemeral=True,
                 )
                 return

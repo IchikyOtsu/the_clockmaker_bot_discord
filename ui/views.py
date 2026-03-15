@@ -10,13 +10,14 @@ class RaceSelectView(discord.ui.View):
     On selection, opens the CreateCharacterModal with the chosen race.
     """
 
-    def __init__(self, races: list[Race], db: DatabaseClient) -> None:
+    def __init__(self, races: list[Race], db: DatabaseClient, guild_id: str) -> None:
         super().__init__(timeout=120)
         self._db = db
+        self._guild_id = guild_id
 
         options = [
             discord.SelectOption(label=race.nom, value=race.nom)
-            for race in races[:25]  # Discord caps Select options at 25
+            for race in races[:25]
         ]
 
         select = discord.ui.Select(
@@ -30,7 +31,6 @@ class RaceSelectView(discord.ui.View):
 
     async def _on_race_selected(self, interaction: discord.Interaction) -> None:
         espece = interaction.data["values"][0]
-        modal = CreateCharacterModal(db=self._db, espece=espece)
-        # send_modal must be the first (and only) response to a component interaction
+        modal = CreateCharacterModal(db=self._db, espece=espece, guild_id=self._guild_id)
         await interaction.response.send_modal(modal)
         self.stop()

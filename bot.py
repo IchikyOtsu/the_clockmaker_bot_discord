@@ -1,14 +1,28 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 import core.config as config
 from core.database import DatabaseClient
 
 
+class ClockMasterTree(app_commands.CommandTree):
+    """CommandTree with guild restriction: rejects all interactions outside DEV_GUILD_ID."""
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if config.DEV_GUILD_ID and interaction.guild_id != config.DEV_GUILD_ID:
+            await interaction.response.send_message(
+                "Ce bot n'est pas disponible sur ce serveur.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+
 class ClockMasterBot(commands.Bot):
     def __init__(self) -> None:
         intents = discord.Intents.default()
-        super().__init__(command_prefix="!", intents=intents)
+        super().__init__(command_prefix="!", intents=intents, tree_cls=ClockMasterTree)
         self.db: DatabaseClient  # assigned in setup_hook
 
     async def setup_hook(self) -> None:
@@ -22,7 +36,7 @@ class ClockMasterBot(commands.Bot):
             guild = discord.Object(id=config.DEV_GUILD_ID)
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
-            print(f"[sync] Commandes synchronisées sur le serveur de dev ({config.DEV_GUILD_ID})")
+            print(f"[sync] Commandes synchronisées sur le serveur ({config.DEV_GUILD_ID})")
         else:
             await self.tree.sync()
             print("[sync] Commandes synchronisées globalement (peut prendre jusqu'à 1h)")
@@ -33,14 +47,14 @@ class ClockMasterBot(commands.Bot):
     async def on_app_command_error(
         self,
         interaction: discord.Interaction,
-        error: discord.app_commands.AppCommandError,
+        error: app_commands.AppCommandError,
     ) -> None:
         message = "Une erreur inattendue est survenue. Réessaie plus tard."
         try:
             await interaction.response.send_message(message, ephemeral=True)
         except discord.InteractionResponded:
             await interaction.followup.send(message, ephemeral=True)
-        raise error  # still log to console
+        raise error
 
 
 if __name__ == "__main__":

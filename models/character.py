@@ -8,6 +8,7 @@ import uuid
 class Character:
     id: uuid.UUID
     discord_id: str
+    guild_id: str
     nom: str
     prenom: str
     espece: str
@@ -25,11 +26,12 @@ class Character:
         return cls(
             id=uuid.UUID(data["id"]),
             discord_id=data["discord_id"],
+            guild_id=data["guild_id"],
             nom=data["nom"],
             prenom=data["prenom"],
             espece=data["espece"],
             age=int(data["age"]),
             faceclaim=data["faceclaim"],
             metier=data.get("metier"),
-            is_active=bool(data.get("is_active", False)),
+            is_active=bool(data.get("is_active", True)),
         )
