@@ -6,6 +6,8 @@ import discord
 from models.character import Character
 from models.weather import WeatherType
 
+COLOR_PINK  = 0xFF85A1   # Rose — anniversaires
+
 # Palette de couleurs
 COLOR_GOLD  = 0xC9A84C   # Or antique — profil
 COLOR_GREEN = 0x2ECC71   # Vert — confirmation création
@@ -102,6 +104,31 @@ def switch_embed(character: Character) -> discord.Embed:
 def error_embed(message: str) -> discord.Embed:
     """Embed d'erreur générique (toujours envoyé en éphémère)."""
     return discord.Embed(title="Erreur", description=message, color=COLOR_RED)
+
+
+def birthday_embed(character: Character) -> discord.Embed:
+    """Embed d'annonce d'anniversaire pour un personnage."""
+    today = date.today()
+    age_line = ""
+    if character.date_naissance:
+        try:
+            birth_year = int(character.date_naissance[:4])
+            age = today.year - birth_year
+            age_line = f"\nIl/elle fête ses **{age} ans** aujourd'hui !"
+        except (ValueError, TypeError):
+            pass
+
+    embed = discord.Embed(
+        title=f"🎂  Joyeux anniversaire, {character.prenom} !",
+        description=f"Souhaitons un joyeux anniversaire à **{character.full_name}** !{age_line}",
+        color=COLOR_PINK,
+    )
+    if character.avatar_url:
+        embed.set_thumbnail(url=character.avatar_url)
+    elif _is_url(character.faceclaim):
+        embed.set_thumbnail(url=character.faceclaim)
+    embed.set_footer(text=f"The Clockmaster • {today.strftime('%d/%m/%Y')}")
+    return embed
 
 
 def weather_embed(weather: WeatherType, today: date, is_new: bool) -> discord.Embed:

@@ -33,6 +33,7 @@ class ClockMasterBot(commands.Bot):
         await self.load_extension("cogs.races")
         await self.load_extension("cogs.edit")
         await self.load_extension("cogs.weather")
+        await self.load_extension("cogs.birthdays")
         await self.load_extension("cogs.help")
 
         if config.DEV_GUILD_ID:

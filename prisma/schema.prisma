@@ -61,6 +61,20 @@ model Race {
   @@map("races")
 }
 
+/// Log des souhaits d'anniversaire — une entrée par (personnage, année).
+/// Évite les doublons si le bot redémarre ou si la commande est appelée plusieurs fois.
+model BirthdayLog {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  character_id String    @db.Uuid
+  year         Int
+  wished_at    DateTime  @default(now()) @db.Timestamptz(6)
+
+  character Character @relation(fields: [character_id], references: [id], onDelete: Cascade)
+
+  @@unique([character_id, year])
+  @@map("birthday_log")
+}
+
 /// Configuration JSON par serveur Discord.
 /// config JSONB : { "admin_role_ids": ["<id>", ...], ... }
 model GuildConfig {

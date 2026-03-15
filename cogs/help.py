@@ -51,11 +51,12 @@ class HelpCog(commands.Cog):
         embed.add_field(
             name="🔒  Administration",
             value=_field([
-                ("/config-meteo", "Configurer le salon et l'heure d'annonce météo"),
-                ("/add-meteo",    "Ajouter un type de météo"),
-                ("/del-meteo",    "Supprimer un type de météo"),
-                ("/races add",    "Ajouter une race jouable"),
-                ("/races remove", "Désactiver une race"),
+                ("/config-meteo",  "Configurer le salon et l'heure d'annonce météo"),
+                ("/config-anniv",  "Configurer le salon et l'heure des anniversaires"),
+                ("/add-meteo",     "Ajouter un type de météo"),
+                ("/del-meteo",     "Supprimer un type de météo"),
+                ("/races add",     "Ajouter une race jouable"),
+                ("/races remove",  "Désactiver une race"),
             ]),
             inline=False,
         )

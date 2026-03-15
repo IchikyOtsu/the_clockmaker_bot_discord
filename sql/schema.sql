@@ -109,6 +109,22 @@ CREATE POLICY "service write guild_config" ON guild_config FOR ALL    USING (tru
 -- ) ON CONFLICT (guild_id) DO UPDATE SET config = EXCLUDED.config;
 
 -- =============================================================
+-- Birthday log — one row per (character, year) to avoid duplicate wishes
+-- =============================================================
+
+CREATE TABLE IF NOT EXISTS birthday_log (
+    id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    character_id UUID        NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    year         INT         NOT NULL,
+    wished_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (character_id, year)
+);
+
+ALTER TABLE birthday_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "public read birthday_log"   ON birthday_log FOR SELECT USING (true);
+CREATE POLICY "service write birthday_log" ON birthday_log FOR ALL    USING (true);
+
+-- =============================================================
 -- Weather system
 -- =============================================================
 

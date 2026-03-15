@@ -334,6 +334,60 @@ class DatabaseClient:
                 configs.append(cfg)
         return configs
 
+    async def get_guilds_with_birthday_config(self) -> list[GuildConfig]:
+        """Return all guilds that have both anniv_channel_id and anniv_hour set."""
+        result = await self._client.table("guild_config").select("*").execute()
+        configs = []
+        for row in result.data:
+            cfg = GuildConfig.from_dict(row)
+            if cfg.anniv_channel_id and cfg.anniv_hour is not None:
+                configs.append(cfg)
+        return configs
+
+    # ------------------------------------------------------------------
+    # Birthdays
+    # ------------------------------------------------------------------
+
+    async def get_characters_with_birthday_today(self, guild_id: str) -> list[Character]:
+        """Return characters whose birth month+day matches today (any year)."""
+        result = await (
+            self._client.table("characters")
+            .select("*")
+            .eq("guild_id", guild_id)
+            .not_.is_("date_naissance", "null")
+            .execute()
+        )
+        today = date.today()
+        suffix = f"{today.month:02d}-{today.day:02d}"  # MM-DD
+        return [
+            Character.from_dict(r)
+            for r in result.data
+            if r.get("date_naissance") and str(r["date_naissance"])[5:] == suffix
+        ]
+
+    async def has_birthday_been_wished(self, character_id: str, year: int) -> bool:
+        result = await (
+            self._client.table("birthday_log")
+            .select("id")
+            .eq("character_id", character_id)
+            .eq("year", year)
+            .limit(1)
+            .execute()
+        )
+        return len(result.data) > 0
+
+    async def log_birthday_wish(self, character_id: str, year: int) -> None:
+        """Mark a character's birthday as wished for the given year (idempotent)."""
+        await (
+            self._client.table("birthday_log")
+            .upsert(
+                {"character_id": character_id, "year": year},
+                on_conflict="character_id,year",
+                ignore_duplicates=True,
+            )
+            .execute()
+        )
+
     async def add_weather_type(
         self, nom: str, description: str, emoji: str, poids: int
     ) -> WeatherType:
