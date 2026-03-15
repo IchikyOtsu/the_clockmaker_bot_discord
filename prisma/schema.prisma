@@ -1,0 +1,57 @@
+// =============================================================
+// The Clockmaster Bot — Prisma Schema (documentation only)
+// Ce fichier documente la structure de la base de données Supabase.
+// Il n'est PAS utilisé par le bot Python — voir sql/schema.sql
+// pour le schéma exécutable.
+// =============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Un compte Discord (1 personnage maximum pour le moment).
+model Player {
+  discord_id String     @id @db.Text
+  created_at DateTime   @default(now()) @db.Timestamptz(6)
+
+  character  Character?
+
+  @@map("players")
+}
+
+/// Personnage unique lié à un joueur Discord.
+/// discord_id est UNIQUE → 1 personnage par joueur.
+/// espece est TEXT (valeur libre, validée contre la table races à la création).
+model Character {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  discord_id String   @unique @db.Text
+  nom        String   @db.Text
+  prenom     String   @db.Text
+  espece     String   @db.Text
+  age        Int
+  faceclaim  String   @db.Text
+  metier     String?  @db.Text
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  player Player @relation(fields: [discord_id], references: [discord_id], onDelete: Cascade)
+
+  @@map("characters")
+}
+
+/// Race jouable, gérée par les admins via /races add|remove.
+/// Soft-delete via is_active = false — les anciens personnages conservent leur espèce en TEXT.
+model Race {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nom        String   @unique @db.Text
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("races")
+}
