@@ -18,13 +18,33 @@ from ui.embeds import character_updated_embed, error_embed
 # ---------------------------------------------------------------------------
 
 def _parse_date(value: str) -> str:
-    """Parse JJ/MM/AAAA (ou ISO) → YYYY-MM-DD. Raises ValueError si invalide."""
-    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d"):
+    """
+    Parse JJ/MM/AAAA → AAAA-MM-JJ. Raises ValueError si invalide.
+    Accepte un an négatif pour les dates avant J.-C. : JJ/MM/-500
+    """
+    value = value.strip()
+    parts = value.split("/")
+    if len(parts) == 3:
         try:
-            return datetime.strptime(value.strip(), fmt).strftime("%Y-%m-%d")
+            day = int(parts[0])
+            month = int(parts[1])
+            year = int(parts[2])
+            if not (1 <= day <= 31 and 1 <= month <= 12):
+                raise ValueError
+            if year < 0:
+                return f"-{abs(year):04d}-{month:02d}-{day:02d}"
+            return f"{year:04d}-{month:02d}-{day:02d}"
+        except ValueError:
+            pass
+    for fmt in ("%d-%m-%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value, fmt).strftime("%Y-%m-%d")
         except ValueError:
             continue
-    raise ValueError(f"Format invalide : « {value} ». Utilise JJ/MM/AAAA.")
+    raise ValueError(
+        f"Format invalide : « {value} ».\n"
+        "Utilise JJ/MM/AAAA ou JJ/MM/-AAAA pour avant J.-C. (ex : 14/03/-500)."
+    )
 
 
 def _crop_square_jpeg(raw: bytes, size: int = 512) -> bytes:

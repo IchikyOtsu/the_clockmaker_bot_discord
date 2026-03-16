@@ -5,11 +5,20 @@ from typing import Optional
 import uuid
 
 
+def _parse_iso_parts(date_naissance: str) -> tuple[int, int, int]:
+    """Parse YYYY-MM-DD or -YYYY-MM-DD → (year, month, day). Year can be 0 or negative."""
+    bc = date_naissance.startswith("-")
+    raw = date_naissance[1:] if bc else date_naissance
+    parts = raw.split("-")
+    year = -int(parts[0]) if bc else int(parts[0])
+    return year, int(parts[1]), int(parts[2])
+
+
 def _compute_age(date_naissance: str) -> int:
-    """Compute age from ISO YYYY-MM-DD birth date."""
+    """Compute age from ISO YYYY-MM-DD or -YYYY-MM-DD birth date (supports BC years)."""
     today = _date.today()
-    birth = _date.fromisoformat(date_naissance)
-    return today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
+    year, month, day = _parse_iso_parts(date_naissance)
+    return today.year - year - ((today.month, today.day) < (month, day))
 
 
 @dataclass
@@ -35,13 +44,17 @@ class Character:
 
     @property
     def birthday_display(self) -> Optional[str]:
-        """Return date as DD/MM/YYYY for display, or None."""
+        """Return date as DD/MM/YYYY (or DD/MM/YYYY av. J.-C.) for display, or None."""
         if not self.date_naissance:
             return None
         try:
-            parts = self.date_naissance.split("-")  # YYYY-MM-DD
-            return f"{parts[2]}/{parts[1]}/{parts[0]}"
-        except (IndexError, AttributeError):
+            bc = self.date_naissance.startswith("-")
+            raw = self.date_naissance[1:] if bc else self.date_naissance
+            y, m, d = raw.split("-")
+            if bc or int(y) == 0:
+                return f"{d}/{m}/{int(y) or 1} av. J.-C."
+            return f"{d}/{m}/{y}"
+        except (IndexError, AttributeError, ValueError):
             return self.date_naissance
 
     def compute_age(self) -> int:

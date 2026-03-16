@@ -388,13 +388,7 @@ class ReputationAmountModal(discord.ui.Modal):
                 await self._select_message.delete()
             except (discord.NotFound, discord.HTTPException):
                 pass
-
-        # Retirer les boutons réputation du message mod
-        if self._mod_message:
-            try:
-                await self._mod_message.edit(view=None)
-            except (discord.NotFound, discord.HTTPException):
-                pass
+        # Les boutons de réputation restent sur le message mod jusqu'au clic "Fermer"
 
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
         import traceback; traceback.print_exc()
@@ -464,6 +458,7 @@ class ReputationView(discord.ui.View):
         self._confession_id = confession_id
         self.add_rep_btn.custom_id = f"conf_rep_add:{confession_id}"
         self.rem_rep_btn.custom_id = f"conf_rep_rem:{confession_id}"
+        self.close_btn.custom_id   = f"conf_rep_close:{confession_id}"
 
     async def _open_select(
         self, interaction: discord.Interaction, mode: str
@@ -506,6 +501,17 @@ class ReputationView(discord.ui.View):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await self._open_select(interaction, "remove")
+
+    @discord.ui.button(
+        label="Fermer",
+        style=discord.ButtonStyle.secondary,
+        custom_id="conf_rep_close:placeholder",
+        emoji="✖️",
+    )
+    async def close_btn(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        await interaction.response.edit_message(view=None)
 
 
 # ---------------------------------------------------------------------------

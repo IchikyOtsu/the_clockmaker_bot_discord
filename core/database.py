@@ -425,10 +425,11 @@ class DatabaseClient:
         )
         today = date.today()
         suffix = f"{today.month:02d}-{today.day:02d}"  # MM-DD
+        # Use last 5 chars to handle both YYYY-MM-DD and -YYYY-MM-DD (BC dates)
         return [
             Character.from_dict(r)
             for r in result.data
-            if r.get("date_naissance") and str(r["date_naissance"])[5:] == suffix
+            if r.get("date_naissance") and str(r["date_naissance"])[-5:] == suffix
         ]
 
     async def has_birthday_been_wished(self, character_id: str, year: int) -> bool:
