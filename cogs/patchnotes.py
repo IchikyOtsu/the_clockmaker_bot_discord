@@ -97,6 +97,11 @@ VERSIONS: dict[str, discord.Embed] = {
                 "`/mon-defi` demande aussi quel personnage pour afficher le défi correspondant\n"
                 "Les listes déroulantes de sélection se suppriment après usage"
             )),
+            ("💬  Prise de parole en personnage", (
+                "`/says message:...` — Envoyer un message **au nom de votre personnage actif**\n"
+                "Le nom et l'avatar du personnage remplacent les vôtres dans le salon\n"
+                "Réagissez avec ❌ sur le message pour le supprimer (propriétaire uniquement)"
+            )),
             ("🔧  Renommage des commandes", (
                 "`/create characters` → `/chara-create`\n"
                 "`/editchara` → `/chara-edit`\n"
@@ -114,35 +119,51 @@ VERSIONS_ORDER = ["3.0.0", "2.0.0", "1.0.0"]   # newest first
 # View — dropdown pour naviguer entre les versions
 # ---------------------------------------------------------------------------
 
+def _make_select(current_version: str) -> discord.ui.Select:
+    return discord.ui.Select(
+        placeholder="Voir une version…",
+        options=[
+            discord.SelectOption(
+                label=f"v{v}",
+                value=v,
+                description=VERSIONS[v].description or "",
+                default=(v == current_version),
+            )
+            for v in VERSIONS_ORDER
+        ],
+    )
+
+
 class PatchnoteView(discord.ui.View):
 
-    def __init__(self) -> None:
+    def __init__(self, current_version: str = VERSIONS_ORDER[0]) -> None:
         super().__init__(timeout=120)
         self._message: discord.Message | None = None
-
-        select = discord.ui.Select(
-            placeholder="Voir une version précédente…",
-            options=[
-                discord.SelectOption(
-                    label=f"v{v}",
-                    value=v,
-                    description=VERSIONS[v].description or "",
-                    default=(v == VERSIONS_ORDER[0]),
-                )
-                for v in VERSIONS_ORDER
-            ],
-        )
-        select.callback = self._on_select
-        self.add_item(select)
+        self._current = current_version
+        self._select = _make_select(current_version)
+        self._select.callback = self._on_select
+        self.add_item(self._select)
 
     async def _on_select(self, interaction: discord.Interaction) -> None:
         version = interaction.data["values"][0]
-        await interaction.response.edit_message(embed=VERSIONS[version])
+        self._current = version
+        # Rebuild the select so default reflects new selection and all options stay clickable
+        self.remove_item(self._select)
+        self._select = _make_select(version)
+        self._select.callback = self._on_select
+        self.add_item(self._select)
+        await interaction.response.edit_message(embed=VERSIONS[version], view=self)
 
     async def on_timeout(self) -> None:
         if self._message:
             try:
-                await self._message.edit(view=None)
+                close_view = discord.ui.View()
+                btn = discord.ui.Button(label="✖  Fermer", style=discord.ButtonStyle.secondary)
+                async def _close(inter: discord.Interaction) -> None:
+                    await inter.response.edit_message(view=None)
+                btn.callback = _close
+                close_view.add_item(btn)
+                await self._message.edit(view=close_view)
             except discord.HTTPException:
                 pass
 

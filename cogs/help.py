@@ -34,6 +34,7 @@ def _build_embeds() -> dict[str, discord.Embed]:
                 ("/profil [nom]",          "Consulter le profil d'un personnage"),
                 ("/chara-edit",            "Modifier ton personnage (nom, espèce, réputation, avatar…)"),
                 ("/chara-switch",          "Changer de personnage actif"),
+                ("/says <message>",        "Envoyer un message au nom de ton personnage actif (❌ pour supprimer)"),
             ]),
         ]),
         "tirage": embed("🃏  Tirage & Défis", [
