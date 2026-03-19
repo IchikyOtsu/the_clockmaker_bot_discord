@@ -345,6 +345,15 @@ class DatabaseClient:
         result = await self._client.table("weather_types").select("*").execute()
         return [WeatherType.from_dict(r) for r in result.data]
 
+    async def get_weather_types_for_season(self, season: str | None = None) -> list[WeatherType]:
+        """Return weather types with a positive weight for the given season.
+        Falls back to all types if none have a non-zero weight (safety net)."""
+        from models.weather import current_season as _cs
+        s = season or _cs()
+        all_types = await self.get_all_weather_types()
+        filtered = [t for t in all_types if t.poids_for_season(s) > 0]
+        return filtered if filtered else all_types
+
     async def log_weather(self, guild_id: str, weather_type: WeatherType) -> None:
         """Insert today's weather for the guild. Silently ignores duplicate (race condition)."""
         await (
@@ -1160,7 +1169,8 @@ class DatabaseClient:
             )
 
     async def add_weather_type(
-        self, nom: str, description: str, emoji: str, poids: int
+        self, nom: str, description: str, emoji: str,
+        poids_saisons: dict[str, int],
     ) -> WeatherType:
         result = await (
             self._client.table("weather_types")
@@ -1169,7 +1179,7 @@ class DatabaseClient:
                     "nom": nom.strip(),
                     "description": description.strip(),
                     "emoji": emoji.strip(),
-                    "poids": poids,
+                    "poids_saisons": poids_saisons,
                 }
             )
             .execute()

@@ -257,15 +257,17 @@ def confession_report_embed(confession: Confession, reporter_id: str) -> discord
     return embed
 
 
-def weather_embed(weather: WeatherType, today: date, is_new: bool) -> discord.Embed:
+def weather_embed(weather: WeatherType, today: date, is_new: bool, season: str | None = None) -> discord.Embed:
     """Embed météo du jour pour /meteo."""
+    from models.weather import SEASON_LABELS, current_season
+    s = season or current_season(today)
     embed = discord.Embed(
         title=f"{weather.emoji}  Météo du {today.strftime('%d/%m/%Y')}",
         description=weather.description,
         color=COLOR_SKY,
     )
-    embed.add_field(name="Type",          value=f"{weather.emoji} {weather.nom}", inline=True)
-    embed.add_field(name="Probabilité",   value=f"{weather.poids} %",            inline=True)
+    embed.add_field(name="Type",   value=f"{weather.emoji} {weather.nom}", inline=True)
+    embed.add_field(name="Saison", value=SEASON_LABELS.get(s, s),         inline=True)
     footer = "Fraîchement générée • The Clockmaster" if is_new else "Météo du jour • The Clockmaster"
     embed.set_footer(text=footer)
     return embed
