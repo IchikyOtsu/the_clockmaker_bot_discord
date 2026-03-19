@@ -110,9 +110,21 @@ VERSIONS: dict[str, discord.Embed] = {
             )),
         ],
     ),
+    "3.1.0": _build_embed(
+        "v3.1.0", "Partenariats & Prise de parole",
+        [
+            ("🤝  Système de partenariat", (
+                "`/config-partenariat salon role` — Configure le salon et le rôle Partenaire\n"
+                "Le bot publie et épingle le **protocole complet** avec un bouton de demande\n"
+                "Clic sur **📨 Faire une demande** → formulaire → ticket privé créé automatiquement\n"
+                "Les admins peuvent **Approuver** (instructions envoyées) ou **Refuser** (avec raison)\n"
+                "Une fois la pub confirmée → rôle @Partenaire attribué, ticket archivé"
+            ))
+        ],
+    ),
 }
 
-VERSIONS_ORDER = ["3.0.0", "2.0.0", "1.0.0"]   # newest first
+VERSIONS_ORDER = ["3.1.0", "3.0.0", "2.0.0", "1.0.0"]   # newest first
 
 
 # ---------------------------------------------------------------------------

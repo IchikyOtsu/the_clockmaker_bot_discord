@@ -94,6 +94,9 @@ def _build_embeds() -> dict[str, discord.Embed]:
                 ("/defi link",   "Lier un défi à une carte"),
                 ("/defi unlink", "Délier un défi d'une carte"),
             ]),
+            ("Partenariat", [
+                ("/config-partenariat", "Configurer le salon et le rôle de partenariat"),
+            ]),
             ("Confessions", [
                 ("/confession setup",      "Configurer le salon et le mode révision"),
                 ("/banconfess utilisateur", "Bannir un utilisateur des confessions"),
