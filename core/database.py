@@ -61,12 +61,26 @@ class DatabaseClient:
     # Characters
     # ------------------------------------------------------------------
 
-    async def create_character(self, discord_id: str, guild_id: str, data: dict) -> Character:
+    async def create_character(
+        self, discord_id: str, guild_id: str, data: dict, max_characters: int = 2
+    ) -> Character:
         await self.ensure_player(discord_id, guild_id)
 
         count = await self.count_characters(discord_id, guild_id)
-        if count >= 1:
-            raise DatabaseError("Tu as déjà un personnage. Un seul personnage est autorisé par compte.")
+        if count >= max_characters:
+            raise DatabaseError(
+                f"Tu as atteint la limite de {max_characters} personnage(s) sur ce serveur."
+            )
+
+        # Deactivate existing characters — the new one becomes active
+        if count > 0:
+            await (
+                self._client.table("characters")
+                .update({"is_active": False})
+                .eq("discord_id", discord_id)
+                .eq("guild_id", guild_id)
+                .execute()
+            )
 
         payload = {
             "discord_id": discord_id,
@@ -96,6 +110,11 @@ class DatabaseClient:
             .execute()
         )
         return result.count or 0
+
+    async def get_max_characters(self, guild_id: str) -> int:
+        """Return the configured character limit for this guild (default 2)."""
+        cfg = await self.get_guild_config(guild_id)
+        return cfg.max_characters
 
     async def get_active_character(self, discord_id: str, guild_id: str) -> Optional[Character]:
         result = await (
@@ -188,6 +207,37 @@ class DatabaseClient:
         )
         return [Character.from_dict(row) for row in result.data]
 
+    async def get_character_by_id(self, character_id: str) -> Optional[Character]:
+        result = await (
+            self._client.table("characters")
+            .select("*")
+            .eq("id", character_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return None
+        return Character.from_dict(result.data[0])
+
+    async def update_character_fields_by_id(
+        self, character_id: str, updates: dict
+    ) -> Character:
+        """Update one or more fields on a specific character (by UUID)."""
+        invalid = set(updates.keys()) - EDITABLE_FIELDS
+        if invalid:
+            raise DatabaseError(f"Champs non modifiables : {', '.join(invalid)}")
+        if "date_naissance" in updates and updates["date_naissance"]:
+            updates = {**updates, "age": _compute_age(updates["date_naissance"])}
+        result = await (
+            self._client.table("characters")
+            .update(updates)
+            .eq("id", character_id)
+            .execute()
+        )
+        if not result.data:
+            raise CharacterNotFound("Personnage introuvable.")
+        return Character.from_dict(result.data[0])
+
     async def update_character_fields(
         self, discord_id: str, guild_id: str, updates: dict
     ) -> Character:
@@ -204,10 +254,11 @@ class DatabaseClient:
             .update(updates)
             .eq("discord_id", discord_id)
             .eq("guild_id", guild_id)
+            .eq("is_active", True)
             .execute()
         )
         if not result.data:
-            raise CharacterNotFound("Aucun personnage trouvé pour ce compte.")
+            raise CharacterNotFound("Aucun personnage actif trouvé pour ce compte.")
         return Character.from_dict(result.data[0])
 
     async def update_character_field(
@@ -252,13 +303,14 @@ class DatabaseClient:
     # ------------------------------------------------------------------
 
     async def upload_avatar(
-        self, discord_id: str, guild_id: str, image_bytes: bytes
+        self, character_id: str, guild_id: str, image_bytes: bytes
     ) -> str:
         """
         Upload a JPEG avatar to Supabase Storage and return the public URL.
         Requires a public bucket named 'avatars' to exist in Supabase Storage.
+        Uses character_id in the path so each character has its own file.
         """
-        path = f"{guild_id}/{discord_id}.jpg"
+        path = f"{guild_id}/{character_id}.jpg"
 
         await self._client.storage.from_(AVATAR_BUCKET).upload(
             path=path,
@@ -1010,39 +1062,41 @@ class DatabaseClient:
     # ------------------------------------------------------------------
 
     async def get_active_tirage_log(
-        self, guild_id: str, discord_id: str
+        self, guild_id: str, discord_id: str, character_id: Optional[str] = None
     ) -> TirageLog | None:
-        result = await (
+        query = (
             self._client.table("tirage_log")
             .select("*")
             .eq("guild_id", guild_id)
             .eq("discord_id", discord_id)
             .eq("status", "active")
-            .limit(1)
-            .execute()
         )
+        if character_id:
+            query = query.eq("character_id", character_id)
+        result = await query.limit(1).execute()
         if not result.data:
             return None
         return TirageLog.from_dict(result.data[0])
 
     async def get_tirage_log_today(
-        self, guild_id: str, discord_id: str
+        self, guild_id: str, discord_id: str, character_id: Optional[str] = None
     ) -> TirageLog | None:
-        result = await (
+        query = (
             self._client.table("tirage_log")
             .select("*")
             .eq("guild_id", guild_id)
             .eq("discord_id", discord_id)
             .eq("drawn_date", date.today().isoformat())
-            .limit(1)
-            .execute()
         )
+        if character_id:
+            query = query.eq("character_id", character_id)
+        result = await query.limit(1).execute()
         if not result.data:
             return None
         return TirageLog.from_dict(result.data[0])
 
     async def draw_tirage(
-        self, guild_id: str, discord_id: str
+        self, guild_id: str, discord_id: str, character_id: Optional[str] = None
     ) -> tuple[TirageCard, Defi, TirageLog]:
         """Draw a random card that has at least one active defi, assign a random defi.
         Saves to tirage_log immediately. Raises DatabaseError if pool is empty."""
@@ -1066,17 +1120,21 @@ class DatabaseClient:
         card = random.choice(eligible)
         defi = random.choice(card_defi_map[str(card.id)])
 
+        payload: dict = {
+            "guild_id": guild_id,
+            "discord_id": discord_id,
+            "card_id": str(card.id),
+            "defi_id": str(defi.id),
+            "drawn_date": date.today().isoformat(),
+            "status": "active",
+        }
+        if character_id:
+            payload["character_id"] = character_id
+
         try:
             result = await (
                 self._client.table("tirage_log")
-                .insert({
-                    "guild_id": guild_id,
-                    "discord_id": discord_id,
-                    "card_id": str(card.id),
-                    "defi_id": str(defi.id),
-                    "drawn_date": date.today().isoformat(),
-                    "status": "active",
-                })
+                .insert(payload)
                 .execute()
             )
         except Exception as exc:
@@ -1098,8 +1156,8 @@ class DatabaseClient:
             .execute()
         )
 
-    async def validate_tirage(self, guild_id: str, discord_id: str) -> TirageLog:
-        log = await self.get_active_tirage_log(guild_id, discord_id)
+    async def validate_tirage(self, guild_id: str, discord_id: str, character_id: str | None = None) -> TirageLog:
+        log = await self.get_active_tirage_log(guild_id, discord_id, character_id)
         if not log:
             raise DatabaseError("Tu n'as pas de défi en cours.")
         result = await (
@@ -1116,9 +1174,9 @@ class DatabaseClient:
         return TirageLog.from_dict(result.data[0])
 
     async def get_full_tirage_log(
-        self, guild_id: str, discord_id: str
+        self, guild_id: str, discord_id: str, character_id: str | None = None
     ) -> tuple[TirageLog, TirageCard, Defi] | None:
-        log = await self.get_active_tirage_log(guild_id, discord_id)
+        log = await self.get_active_tirage_log(guild_id, discord_id, character_id)
         if not log:
             return None
         card_result = await (

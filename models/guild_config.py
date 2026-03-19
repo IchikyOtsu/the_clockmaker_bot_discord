@@ -15,6 +15,7 @@ class GuildConfig:
     confession_channel_id:     Optional[str] = None
     confession_mod_channel_id: Optional[str] = None
     confession_review_mode:    bool = False
+    max_characters:            int  = 2          # max characters per player per guild
     raw_config: dict = field(default_factory=dict)  # full JSONB, preserved on partial updates
 
     @classmethod
@@ -35,5 +36,6 @@ class GuildConfig:
             confession_channel_id=cfg.get("confession_channel_id") or None,
             confession_mod_channel_id=cfg.get("confession_mod_channel_id") or None,
             confession_review_mode=bool(cfg.get("confession_review_mode", False)),
+            max_characters=int(cfg.get("max_characters", 2)),
             raw_config=cfg,
         )

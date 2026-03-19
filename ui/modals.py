@@ -1,8 +1,10 @@
+import io
 import traceback
 import uuid
 
 import discord
 from datetime import datetime
+from PIL import Image, UnidentifiedImageError
 
 from core.database import DatabaseClient, DatabaseError
 from models.character import _compute_age
@@ -45,6 +47,21 @@ def _parse_date(value: str) -> str | None:
     )
 
 
+def _crop_square_jpeg(raw: bytes, size: int = 512) -> bytes:
+    """Recadre l'image en carré centré et encode en JPEG 512×512."""
+    try:
+        img = Image.open(io.BytesIO(raw)).convert("RGB")
+    except UnidentifiedImageError:
+        raise ValueError("Le fichier ne semble pas être une image valide.")
+    w, h = img.size
+    side = min(w, h)
+    img = img.crop(((w - side) // 2, (h - side) // 2, (w + side) // 2, (h + side) // 2))
+    img = img.resize((size, size), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    return buf.getvalue()
+
+
 class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
     nom = discord.ui.TextInput(
         label="Nom de famille",
@@ -67,7 +84,7 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
         style=discord.TextStyle.paragraph,
         placeholder="https://i.imgur.com/exemple.jpg  ou  Acteur/Actrice : Prénom Nom",
         max_length=500,
-        required=True,
+        required=False,
     )
     reputation = discord.ui.TextInput(
         label="Réputation (optionnel, -100 à 100)",
@@ -76,12 +93,22 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
         required=False,
     )
 
-    def __init__(self, db: DatabaseClient, espece: str, race_id: uuid.UUID, guild_id: str) -> None:
+    def __init__(
+        self,
+        db: DatabaseClient,
+        espece: str,
+        race_id: uuid.UUID,
+        guild_id: str,
+        max_characters: int = 2,
+        avatar: discord.Attachment | None = None,
+    ) -> None:
         super().__init__()
         self._db = db
         self._espece = espece
         self._race_id = race_id
         self._guild_id = guild_id
+        self._max_characters = max_characters
+        self._avatar = avatar
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         # Parse date
@@ -140,10 +167,13 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
 
         await interaction.response.defer(ephemeral=True)
 
+        faceclaim_value = self.faceclaim.value.strip() or "—"
+
         try:
             character = await self._db.create_character(
                 discord_id=str(interaction.user.id),
                 guild_id=self._guild_id,
+                max_characters=self._max_characters,
                 data={
                     "nom": self.nom.value.strip(),
                     "prenom": self.prenom.value.strip(),
@@ -151,13 +181,29 @@ class CreateCharacterModal(discord.ui.Modal, title="Créer un personnage"):
                     "race_id": str(self._race_id),
                     "age": age_value,
                     "date_naissance": date_iso,
-                    "faceclaim": self.faceclaim.value.strip(),
+                    "faceclaim": faceclaim_value,
                     "reputation": reputation_value,
                 },
             )
         except DatabaseError as exc:
             await interaction.followup.send(embed=error_embed(str(exc)), ephemeral=True)
             return
+
+        # Upload avatar if provided (non-blocking on failure)
+        if self._avatar is not None:
+            try:
+                raw = await self._avatar.read()
+                jpeg_bytes = _crop_square_jpeg(raw)
+                avatar_url = await self._db.upload_avatar(
+                    character_id=str(character.id),
+                    guild_id=self._guild_id,
+                    image_bytes=jpeg_bytes,
+                )
+                character = await self._db.update_character_fields(
+                    str(interaction.user.id), self._guild_id, {"avatar_url": avatar_url}
+                )
+            except Exception:
+                pass  # avatar non critique, le personnage a bien été créé
 
         await interaction.followup.send(embed=character_created_embed(character), ephemeral=True)
 

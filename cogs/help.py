@@ -29,15 +29,16 @@ def _build_embeds() -> dict[str, discord.Embed]:
     return {
         "personnage": embed("🧑‍🤝‍🧑  Personnage", [
             ("Commandes", [
-                ("/create characters", "Créer ton personnage"),
-                ("/profil [nom]",       "Consulter le profil d'un personnage"),
-                ("/editchara",          "Modifier ton personnage (nom, espèce, réputation, avatar…)"),
-                ("/switch",             "Changer de personnage actif"),
+                ("/chara-create",         "Créer ton personnage (avatar optionnel en pièce jointe)"),
+                ("/chara-list [@joueur]",  "Voir la liste de tes personnages (ou ceux d'un autre joueur)"),
+                ("/profil [nom]",          "Consulter le profil d'un personnage"),
+                ("/chara-edit",            "Modifier ton personnage (nom, espèce, réputation, avatar…)"),
+                ("/chara-switch",          "Changer de personnage actif"),
             ]),
         ]),
         "tirage": embed("🃏  Tirage & Défis", [
             ("Commandes joueur", [
-                ("/tirage",   "Tirer une carte et recevoir un défi du jour (1×/jour)"),
+                ("/tirage",   "Tirer une carte (1×/jour par personnage) — choisir son perso"),
                 ("/mon-defi", "Voir ton défi en cours (boutons : valider / fermer)"),
             ]),
         ]),
@@ -49,7 +50,7 @@ def _build_embeds() -> dict[str, discord.Embed]:
         ]),
         "races": embed("🗂️  Races", [
             ("Commandes", [
-                ("/races list", "Afficher toutes les races disponibles"),
+                ("/races-list", "Afficher toutes les races disponibles"),
             ]),
         ]),
         "confessions": embed("💬  Confessions", [

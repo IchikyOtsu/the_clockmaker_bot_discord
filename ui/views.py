@@ -7,11 +7,21 @@ from ui.modals import CreateCharacterModal
 class RaceSelectView(discord.ui.View):
     """Step 1 of character creation: race dropdown → opens CreateCharacterModal."""
 
-    def __init__(self, races: list[Race], db: DatabaseClient, guild_id: str) -> None:
+    def __init__(
+        self,
+        races: list[Race],
+        db: DatabaseClient,
+        guild_id: str,
+        max_characters: int = 2,
+        avatar: discord.Attachment | None = None,
+    ) -> None:
         super().__init__(timeout=120)
         self._db = db
         self._guild_id = guild_id
         self._races = races
+        self._max_characters = max_characters
+        self._avatar = avatar
+        self._message: discord.Message | None = None
 
         select = discord.ui.Select(
             placeholder="Choisis ta race…",
@@ -32,10 +42,19 @@ class RaceSelectView(discord.ui.View):
             )
             return
         modal = CreateCharacterModal(
-            db=self._db, espece=race.nom, race_id=race.id, guild_id=self._guild_id
+            db=self._db, espece=race.nom, race_id=race.id, guild_id=self._guild_id,
+            max_characters=self._max_characters, avatar=self._avatar,
         )
         await interaction.response.send_modal(modal)
         self.stop()
+        if self._message:
+            try:
+                await self._message.edit(
+                    content="✅ Race sélectionnée ! Remplis le formulaire qui vient de s'ouvrir.",
+                    view=None,
+                )
+            except discord.HTTPException:
+                pass
 
 
 class RaceUpdateView(discord.ui.View):

@@ -81,7 +81,7 @@ def character_created_embed(character: Character) -> discord.Embed:
         embed.add_field(name="Faceclaim", value=character.faceclaim, inline=False)
 
     embed.set_footer(
-        text="Personnage actif. • Tu peux ajouter une photo avec /editchara avatar • The Clockmaster"
+        text=f"Personnage actif : {character.full_name} • /chara-edit avatar pour ajouter une photo • The Clockmaster"
     )
     return embed
 
@@ -97,7 +97,7 @@ def character_updated_embed(character: Character, field: str) -> discord.Embed:
         embed.set_thumbnail(url=character.avatar_url)
     elif _is_url(character.faceclaim):
         embed.set_thumbnail(url=character.faceclaim)
-    embed.set_footer(text="The Clockmaster")
+    embed.set_footer(text=f"Personnage : {character.full_name} • The Clockmaster")
     return embed
 
 
@@ -112,7 +112,7 @@ def switch_embed(character: Character) -> discord.Embed:
         embed.set_thumbnail(url=character.avatar_url)
     elif _is_url(character.faceclaim):
         embed.set_thumbnail(url=character.faceclaim)
-    embed.set_footer(text="The Clockmaster")
+    embed.set_footer(text=f"Personnage actif : {character.full_name} • The Clockmaster")
     return embed
 
 

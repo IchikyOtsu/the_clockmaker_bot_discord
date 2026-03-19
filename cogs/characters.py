@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+from typing import Optional
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from core.database import DatabaseClient, CharacterNotFound, DatabaseError
+from core.permissions import is_admin
 from models.character import Character
 from ui.embeds import switch_embed, error_embed
 from ui.views import RaceSelectView
+
+COLOR_GOLD = 0xC9A84C
+
+COLOR_GREEN = 0x2ECC71
+COLOR_DARK  = 0x1A1A2E
 
 
 class SwitchView(discord.ui.View):
@@ -24,6 +32,7 @@ class SwitchView(discord.ui.View):
         self._db = db
         self._discord_id = discord_id
         self._guild_id = guild_id
+        self._message: discord.Message | None = None
 
         options = [
             discord.SelectOption(
@@ -57,10 +66,14 @@ class SwitchView(discord.ui.View):
 
         self.stop()
         await interaction.followup.send(embed=switch_embed(character), ephemeral=True)
+        if self._message:
+            try:
+                await self._message.edit(content="✅ Personnage changé !", view=None)
+            except discord.HTTPException:
+                pass
 
 
 class CharactersCog(commands.Cog):
-    create = app_commands.Group(name="create", description="Commandes de création.")
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -70,21 +83,36 @@ class CharactersCog(commands.Cog):
         return self.bot.db  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------
-    # /create characters  (step 1: race dropdown → step 2: modal)
+    # /chara-create  (step 1: race dropdown → step 2: modal)
     # ------------------------------------------------------------------
 
-    @create.command(
-        name="characters",
+    @app_commands.command(
+        name="chara-create",
         description="Créer un nouveau personnage et le lier à ton compte Discord.",
     )
-    async def create_characters(self, interaction: discord.Interaction) -> None:
+    @app_commands.describe(avatar="Photo de profil (JPG ou PNG, optionnel — modifiable plus tard avec /chara-edit)")
+    async def create_characters(
+        self, interaction: discord.Interaction, avatar: Optional[discord.Attachment] = None
+    ) -> None:
+        if avatar is not None and (not avatar.content_type or not avatar.content_type.startswith("image/")):
+            await interaction.response.send_message(
+                embed=error_embed("Le fichier avatar doit être une image (JPG ou PNG)."),
+                ephemeral=True,
+            )
+            return
+
         await interaction.response.defer(ephemeral=True)
 
         guild_id = str(interaction.guild_id)
+        max_perso = await self.db.get_max_characters(guild_id)
+        count = await self.db.count_characters(str(interaction.user.id), guild_id)
 
-        if await self.db.count_characters(str(interaction.user.id), guild_id) >= 1:
+        if count >= max_perso:
             await interaction.followup.send(
-                embed=error_embed("Tu as déjà un personnage. Tu ne peux en avoir qu'un seul."),
+                embed=error_embed(
+                    f"Tu as atteint la limite de **{max_perso}** personnage(s) sur ce serveur.\n"
+                    "Utilise `/chara-switch` pour changer de personnage actif."
+                ),
                 ephemeral=True,
             )
             return
@@ -98,18 +126,56 @@ class CharactersCog(commands.Cog):
             )
             return
 
-        view = RaceSelectView(races=races, db=self.db, guild_id=guild_id)
-        await interaction.followup.send(
+        view = RaceSelectView(races=races, db=self.db, guild_id=guild_id, max_characters=max_perso, avatar=avatar)
+        msg = await interaction.followup.send(
             content="**Étape 1/2** — Choisis la race de ton personnage :",
             view=view,
             ephemeral=True,
+            wait=True,
         )
+        view._message = msg
 
     # ------------------------------------------------------------------
-    # /switch
+    # /chara-list
     # ------------------------------------------------------------------
 
-    @app_commands.command(name="switch", description="Changer de personnage actif.")
+    @app_commands.command(name="chara-list", description="Voir la liste de tes personnages.")
+    @app_commands.describe(utilisateur="Voir la liste d'un autre joueur (optionnel)")
+    async def chara_list(
+        self, interaction: discord.Interaction, utilisateur: Optional[discord.Member] = None
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        target = utilisateur or interaction.user
+        guild_id = str(interaction.guild_id)
+        characters = await self.db.list_characters(str(target.id), guild_id)
+
+        if not characters:
+            msg = (
+                "Tu n'as pas encore de personnage. Utilise `/chara-create` pour commencer !"
+                if utilisateur is None
+                else f"**{target.display_name}** n'a aucun personnage sur ce serveur."
+            )
+            await interaction.followup.send(embed=error_embed(msg), ephemeral=True)
+            return
+
+        lines = []
+        for char in characters:
+            prefix = "✓" if char.is_active else "◦"
+            lines.append(f"{prefix} **{char.full_name}** — {char.espece} • {char.age} ans")
+
+        embed = discord.Embed(
+            title=f"Personnages de {target.display_name}",
+            description="\n".join(lines),
+            color=COLOR_GOLD,
+        )
+        embed.set_footer(text="✓ = personnage actif • The Clockmaster")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    # ------------------------------------------------------------------
+    # /chara-switch
+    # ------------------------------------------------------------------
+
+    @app_commands.command(name="chara-switch", description="Changer de personnage actif.")
     async def switch(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
@@ -119,7 +185,7 @@ class CharactersCog(commands.Cog):
         if not characters:
             await interaction.followup.send(
                 embed=error_embed(
-                    "Tu n'as pas encore de personnage. Utilise `/create characters` pour commencer !"
+                    "Tu n'as pas encore de personnage. Utilise `/chara-create` pour commencer !"
                 ),
                 ephemeral=True,
             )
@@ -129,18 +195,61 @@ class CharactersCog(commands.Cog):
             await interaction.followup.send(
                 embed=error_embed(
                     f"Tu n'as qu'un seul personnage : **{characters[0].full_name}**.\n"
-                    "Crée d'abord un autre personnage avec `/create characters`."
+                    "Crée d'abord un autre personnage avec `/chara-create`."
                 ),
                 ephemeral=True,
             )
             return
 
         view = SwitchView(characters, self.db, str(interaction.user.id), guild_id)
-        await interaction.followup.send(
+        msg = await interaction.followup.send(
             content="Quel personnage veux-tu jouer ?",
             view=view,
             ephemeral=True,
+            wait=True,
         )
+        view._message = msg
+
+    # ------------------------------------------------------------------
+    # /config-perso  — admin
+    # ------------------------------------------------------------------
+
+    @app_commands.command(
+        name="config-perso",
+        description="Configurer le nombre maximum de personnages par joueur sur ce serveur.",
+    )
+    @app_commands.describe(max="Nombre maximum de personnages par joueur (1–10)")
+    async def config_perso(self, interaction: discord.Interaction, max: int) -> None:
+        if not await is_admin(interaction, self.db):
+            await interaction.response.send_message(
+                embed=error_embed("Tu n'as pas la permission d'utiliser cette commande."),
+                ephemeral=True,
+            )
+            return
+
+        if not (1 <= max <= 10):
+            await interaction.response.send_message(
+                embed=error_embed("La limite doit être comprise entre 1 et 10."),
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        guild_id = str(interaction.guild_id)
+
+        try:
+            await self.db.update_guild_config_keys(guild_id, {"max_characters": max})
+        except DatabaseError as exc:
+            await interaction.followup.send(embed=error_embed(str(exc)), ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title="Limite de personnages mise à jour",
+            description=f"Chaque joueur peut désormais avoir jusqu'à **{max}** personnage(s) sur ce serveur.",
+            color=COLOR_GREEN,
+        )
+        embed.set_footer(text="The Clockmaster")
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 async def setup(bot: commands.Bot) -> None:

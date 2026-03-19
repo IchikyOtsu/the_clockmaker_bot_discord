@@ -78,6 +78,7 @@ class TirageLog:
     drawn_date: date
     status: str             # 'active' | 'validated'
     validated_at: Optional[str]
+    character_id: Optional[uuid.UUID] = None
 
     @property
     def is_active(self) -> bool:
@@ -85,6 +86,7 @@ class TirageLog:
 
     @classmethod
     def from_dict(cls, data: dict) -> TirageLog:
+        raw_char_id = data.get("character_id")
         return cls(
             id=uuid.UUID(data["id"]),
             guild_id=data["guild_id"],
@@ -94,4 +96,5 @@ class TirageLog:
             drawn_date=date.fromisoformat(str(data["drawn_date"])),
             status=data["status"],
             validated_at=data.get("validated_at"),
+            character_id=uuid.UUID(raw_char_id) if raw_char_id else None,
         )

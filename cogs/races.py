@@ -28,11 +28,10 @@ class RacesCog(commands.Cog):
         return self.bot.db  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------
-    # /races list  — accessible à tous (override de la permission admin)
+    # /races-list  — accessible à tous
     # ------------------------------------------------------------------
 
-    @races.command(name="list", description="Afficher toutes les races disponibles.")
-    @app_commands.default_permissions()  # override : accessible à tous
+    @app_commands.command(name="races-list", description="Afficher toutes les races disponibles.")
     async def races_list(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer()
 

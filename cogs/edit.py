@@ -75,8 +75,9 @@ class EditCog(commands.Cog):
     def db(self) -> DatabaseClient:
         return self.bot.db  # type: ignore[attr-defined]
 
-    @app_commands.command(name="editchara", description="Modifier ton personnage.")
+    @app_commands.command(name="chara-edit", description="Modifier un de tes personnages.")
     @app_commands.describe(
+        personnage="Personnage à modifier",
         nom="Nouveau nom de famille",
         prenom="Nouveau prénom",
         metier="Nouveau métier (tape - pour effacer)",
@@ -89,6 +90,7 @@ class EditCog(commands.Cog):
     async def editchara(
         self,
         interaction: discord.Interaction,
+        personnage: str,
         nom: Optional[str] = None,
         prenom: Optional[str] = None,
         metier: Optional[str] = None,
@@ -125,13 +127,11 @@ class EditCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        # -- Fetch character ----------------------------------------------
-        character = await self.db.get_active_character(
-            str(interaction.user.id), str(interaction.guild_id)
-        )
-        if character is None:
+        # -- Fetch character by ID ----------------------------------------
+        character = await self.db.get_character_by_id(personnage)
+        if character is None or character.discord_id != str(interaction.user.id):
             await interaction.followup.send(
-                embed=error_embed("Tu n'as pas encore de personnage."), ephemeral=True
+                embed=error_embed("Personnage introuvable."), ephemeral=True
             )
             return
 
@@ -193,7 +193,7 @@ class EditCog(commands.Cog):
 
             try:
                 avatar_url = await self.db.upload_avatar(
-                    discord_id=str(interaction.user.id),
+                    character_id=str(character.id),
                     guild_id=str(interaction.guild_id),
                     image_bytes=jpeg_bytes,
                 )
@@ -218,9 +218,7 @@ class EditCog(commands.Cog):
 
         # -- Persist & respond --------------------------------------------
         try:
-            character = await self.db.update_character_fields(
-                str(interaction.user.id), str(interaction.guild_id), updates
-            )
+            character = await self.db.update_character_fields_by_id(personnage, updates)
         except (DatabaseError, CharacterNotFound) as exc:
             await interaction.followup.send(embed=error_embed(str(exc)), ephemeral=True)
             return
@@ -229,6 +227,22 @@ class EditCog(commands.Cog):
             embed=character_updated_embed(character, ", ".join(updates.keys())),
             ephemeral=True,
         )
+
+    @editchara.autocomplete("personnage")
+    async def personnage_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        characters = await self.db.list_characters(
+            str(interaction.user.id), str(interaction.guild_id)
+        )
+        return [
+            app_commands.Choice(
+                name=f"{c.full_name}{' ✓' if c.is_active else ''}",
+                value=str(c.id),
+            )
+            for c in characters
+            if current.lower() in c.full_name.lower()
+        ][:25]
 
     @editchara.autocomplete("espece")
     async def espece_autocomplete(
