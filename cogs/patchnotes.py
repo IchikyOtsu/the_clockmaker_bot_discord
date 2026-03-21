@@ -111,7 +111,7 @@ VERSIONS: dict[str, discord.Embed] = {
         ],
     ),
     "3.1.0": _build_embed(
-        "v3.1.0", "Partenariats & Prise de parole",
+        "v3.1.0", "Partenariats",
         [
             ("🤝  Système de partenariat", (
                 "`/config-partenariat salon role` — Configure le salon et le rôle Partenaire\n"
