@@ -35,6 +35,9 @@ def _build_embeds() -> dict[str, discord.Embed]:
                 ("/chara-edit",            "Modifier ton personnage (nom, espèce, réputation, avatar…)"),
                 ("/chara-switch",          "Changer de personnage actif"),
                 ("/says <message>",        "Envoyer un message au nom de ton personnage actif (❌ pour supprimer)"),
+                ("/metier-list",           "Voir tous les métiers disponibles et leurs titulaires"),
+                ("/metier-prendre",        "Réserver un métier pour ton personnage actif"),
+                ("/metier-quitter",        "Quitter ton métier actuel"),
             ]),
         ]),
         "tirage": embed("🃏  Tirage & Défis", [
@@ -64,6 +67,9 @@ def _build_embeds() -> dict[str, discord.Embed]:
             ]),
         ]),
         "admin": embed("🔒  Administration", [
+            ("Personnages", [
+                ("/config-perso", "Définir le nombre max de personnages par joueur (1–10)"),
+            ]),
             ("Météo & Anniversaires", [
                 ("/config-meteo", "Configurer le salon et l'heure d'annonce météo"),
                 ("/config-anniv", "Configurer le salon et l'heure des anniversaires"),
@@ -93,6 +99,12 @@ def _build_embeds() -> dict[str, discord.Embed]:
                 ("/defi remove", "Désactiver un défi"),
                 ("/defi link",   "Lier un défi à une carte"),
                 ("/defi unlink", "Délier un défi d'une carte"),
+            ]),
+            ("Métiers", [
+                ("/config-metier add",     "Ajouter un poste dans un établissement"),
+                ("/config-metier remove",  "Désactiver un poste"),
+                ("/config-metier limite",  "Modifier le nombre max de titulaires"),
+                ("/config-metier retirer", "Forcer un personnage à quitter son poste"),
             ]),
             ("Partenariat", [
                 ("/config-partenariat", "Configurer le salon et le rôle de partenariat"),

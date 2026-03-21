@@ -122,9 +122,26 @@ VERSIONS: dict[str, discord.Embed] = {
             ))
         ],
     ),
+    "3.2.0": _build_embed(
+        "v3.2.0", "Métiers & Postes",
+        [
+            ("💼  Système de métiers", (
+                "`/metier-list` — Voir tous les établissements, postes disponibles et titulaires\n"
+                "`/metier-prendre` — Réserver un poste pour son personnage actif (sélection en 2 étapes)\n"
+                "`/metier-quitter` — Libérer son poste actuel\n"
+                "Un seul métier par personnage — les postes pleins n'apparaissent pas dans la sélection"
+            )),
+            ("🔧  Admin", (
+                "`/config-metier add` — Ajouter un poste dans un établissement (limite optionnelle)\n"
+                "`/config-metier remove` — Désactiver un poste (avec autocomplete)\n"
+                "`/config-metier limite` — Modifier le nombre max de titulaires d'un poste\n"
+                "`/config-metier retirer` — Forcer un personnage à quitter son poste"
+            )),
+        ],
+    ),
 }
 
-VERSIONS_ORDER = ["3.1.0", "3.0.0", "2.0.0", "1.0.0"]   # newest first
+VERSIONS_ORDER = ["3.2.0", "3.1.0", "3.0.0", "2.0.0", "1.0.0"]   # newest first
 
 
 # ---------------------------------------------------------------------------

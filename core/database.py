@@ -11,6 +11,7 @@ from models.guild_config import GuildConfig
 from models.race import Race
 from models.confession import Confession, ConfessionBan, ConfessionReply
 from models.partenariat import Partenariat
+from models.metier import MetierPoste, MetierReservation
 from models.tirage import CardType, TirageCard, Defi, TirageLog, TIRAGE_CARD_BUCKET
 from models.weather import WeatherType
 
@@ -1359,4 +1360,156 @@ class DatabaseClient:
             .execute()
         )
         return [Partenariat.from_dict(r) for r in result.data]
-        return target
+
+    # ------------------------------------------------------------------
+    # Métiers
+    # ------------------------------------------------------------------
+
+    async def get_metier_postes(self, guild_id: str) -> list[MetierPoste]:
+        result = await (
+            self._client.table("metier_postes")
+            .select("*")
+            .eq("guild_id", guild_id)
+            .eq("is_active", True)
+            .order("etablissement")
+            .order("poste")
+            .execute()
+        )
+        return [MetierPoste.from_dict(r) for r in result.data]
+
+    async def get_metier_reservations_full(
+        self, guild_id: str
+    ) -> list[tuple[MetierPoste, Character]]:
+        result = await (
+            self._client.table("metier_reservations")
+            .select("*, metier_postes(*), characters(*)")
+            .eq("guild_id", guild_id)
+            .execute()
+        )
+        out: list[tuple[MetierPoste, Character]] = []
+        for row in result.data:
+            poste = MetierPoste.from_dict(row["metier_postes"])
+            character = Character.from_dict(row["characters"])
+            out.append((poste, character))
+        return out
+
+    async def get_character_reservation(self, character_id: str) -> Optional[MetierPoste]:
+        result = await (
+            self._client.table("metier_reservations")
+            .select("*, metier_postes(*)")
+            .eq("character_id", character_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return None
+        return MetierPoste.from_dict(result.data[0]["metier_postes"])
+
+    async def count_poste_holders(self, poste_id: str) -> int:
+        result = await (
+            self._client.table("metier_reservations")
+            .select("id", count="exact")
+            .eq("poste_id", poste_id)
+            .execute()
+        )
+        return result.count or 0
+
+    async def add_metier_poste(
+        self,
+        guild_id: str,
+        etablissement: str,
+        poste: str,
+        max_holders: Optional[int] = None,
+    ) -> MetierPoste:
+        result = await (
+            self._client.table("metier_postes")
+            .upsert(
+                {
+                    "guild_id": guild_id,
+                    "etablissement": etablissement.strip(),
+                    "poste": poste.strip(),
+                    "max_holders": max_holders,
+                    "is_active": True,
+                },
+                on_conflict="guild_id,etablissement,poste",
+            )
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Impossible d'ajouter le poste.")
+        return MetierPoste.from_dict(result.data[0])
+
+    async def toggle_metier_poste(self, poste_id: str, active: bool) -> MetierPoste:
+        result = await (
+            self._client.table("metier_postes")
+            .update({"is_active": active})
+            .eq("id", poste_id)
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Poste introuvable.")
+        return MetierPoste.from_dict(result.data[0])
+
+    async def update_metier_poste_limit(
+        self, poste_id: str, max_holders: Optional[int]
+    ) -> MetierPoste:
+        result = await (
+            self._client.table("metier_postes")
+            .update({"max_holders": max_holders})
+            .eq("id", poste_id)
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Poste introuvable.")
+        return MetierPoste.from_dict(result.data[0])
+
+    async def reserve_metier(
+        self, guild_id: str, character_id: str, poste_id: str
+    ) -> MetierReservation:
+        poste_result = await (
+            self._client.table("metier_postes")
+            .select("*")
+            .eq("id", poste_id)
+            .limit(1)
+            .execute()
+        )
+        if not poste_result.data:
+            raise DatabaseError("Poste introuvable.")
+        poste = MetierPoste.from_dict(poste_result.data[0])
+
+        if poste.max_holders is not None:
+            count = await self.count_poste_holders(poste_id)
+            if count >= poste.max_holders:
+                raise DatabaseError(
+                    f"Ce poste est complet ({poste.max_holders}/{poste.max_holders})."
+                )
+
+        try:
+            result = await (
+                self._client.table("metier_reservations")
+                .insert({
+                    "guild_id": guild_id,
+                    "character_id": character_id,
+                    "poste_id": poste_id,
+                })
+                .execute()
+            )
+        except Exception as exc:
+            if "unique" in str(exc).lower() or "23505" in str(exc):
+                raise DatabaseError("Ce personnage a déjà un métier.")
+            raise DatabaseError(str(exc)) from exc
+
+        if not result.data:
+            raise DatabaseError("Impossible d'enregistrer la réservation.")
+        return MetierReservation.from_dict(result.data[0])
+
+    async def quit_metier(self, character_id: str) -> None:
+        await (
+            self._client.table("metier_reservations")
+            .delete()
+            .eq("character_id", character_id)
+            .execute()
+        )
+
+    async def remove_metier_reservation_by_character(self, character_id: str) -> None:
+        await self.quit_metier(character_id)

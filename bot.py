@@ -41,6 +41,7 @@ class ClockMasterBot(commands.Bot):
         await self.load_extension("cogs.patchnotes")
         await self.load_extension("cogs.says")
         await self.load_extension("cogs.partenariat")
+        await self.load_extension("cogs.metiers")
 
         if config.DEV_GUILD_ID:
             guild = discord.Object(id=config.DEV_GUILD_ID)
