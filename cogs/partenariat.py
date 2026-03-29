@@ -157,16 +157,24 @@ class PartnershipRequestModal(discord.ui.Modal, title="Demande de partenariat"):
 
         # Ajouter les membres du rôle support au thread
         support_cfg = await self._cog.db.get_guild_config(str(interaction.guild_id))
-        if support_cfg and support_cfg.partenariat_support_role_id:
-            support_role = interaction.guild.get_role(  # type: ignore[union-attr]
-                int(support_cfg.partenariat_support_role_id)
-            )
-            if support_role:
-                for member in [m for m in interaction.guild.members if support_role in m.roles]:  # type: ignore[union-attr]
-                    try:
-                        await thread.add_user(member)
-                    except discord.HTTPException:
-                        pass
+        if support_cfg and support_cfg.partenariat_support_role_ids:
+            support_roles = {
+                role
+                for rid in support_cfg.partenariat_support_role_ids
+                if (role := interaction.guild.get_role(int(rid))) is not None  # type: ignore[union-attr]
+            }
+            if support_roles:
+                try:
+                    async for member in interaction.guild.fetch_members(limit=None):  # type: ignore[union-attr]
+                        if support_roles.intersection(member.roles):
+                            try:
+                                await thread.add_user(member)
+                            except discord.HTTPException:
+                                pass
+                except discord.Forbidden:
+                    print("[partenariat] ERREUR : Server Members Intent non activé dans le portail Discord Developer.")
+                except discord.HTTPException as e:
+                    print(f"[partenariat] ERREUR fetch_members : {e}")
 
         # Create DB record
         try:
@@ -518,13 +526,15 @@ class PartenariatCog(commands.Cog):
     )
     @app_commands.describe(
         role_partenaire="Rôle attribué automatiquement après validation du partenariat",
-        role_support="Rôle du staff ajouté automatiquement aux threads de demande",
+        role_support="Rôle du staff à ajouter aux threads (peut être appelé plusieurs fois pour en cumuler)",
+        reset_support="Vider la liste des rôles support (True = tout supprimer)",
     )
     async def partenariat_config(
         self,
         interaction: discord.Interaction,
         role_partenaire: discord.Role | None = None,
         role_support: discord.Role | None = None,
+        reset_support: bool = False,
     ) -> None:
         if not await is_admin(interaction, self.db):
             await interaction.response.send_message(
@@ -532,9 +542,9 @@ class PartenariatCog(commands.Cog):
             )
             return
 
-        if role_partenaire is None and role_support is None:
+        if role_partenaire is None and role_support is None and not reset_support:
             await interaction.response.send_message(
-                "❌ Indique au moins un rôle à configurer (`role_partenaire` ou `role_support`).",
+                "❌ Indique au moins un paramètre à modifier.",
                 ephemeral=True,
             )
             return
@@ -549,9 +559,18 @@ class PartenariatCog(commands.Cog):
             updates["partenariat_role_id"] = str(role_partenaire.id)
             changes.append(f"rôle partenaire → {role_partenaire.mention}")
 
+        if reset_support:
+            updates["partenariat_support_role_ids"] = []
+            changes.append("rôles support → liste vidée")
+
         if role_support is not None:
-            updates["partenariat_support_role_id"] = str(role_support.id)
-            changes.append(f"rôle support → {role_support.mention}")
+            # Ajouter à la liste existante (sans doublons)
+            cfg = await self.db.get_guild_config(guild_id)
+            existing = list(cfg.partenariat_support_role_ids) if cfg else []
+            if str(role_support.id) not in existing:
+                existing.append(str(role_support.id))
+            updates["partenariat_support_role_ids"] = existing
+            changes.append(f"rôle support ajouté → {role_support.mention}")
 
         await self.db.update_guild_config_keys(guild_id, updates)
 
