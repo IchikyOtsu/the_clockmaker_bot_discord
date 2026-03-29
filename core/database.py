@@ -10,7 +10,7 @@ from models.character import Character, _compute_age
 from models.guild_config import GuildConfig
 from models.race import Race
 from models.confession import Confession, ConfessionBan, ConfessionReply
-from models.partenariat import Partenariat
+from models.ticket import TicketPanel, TicketCategory, Ticket
 from models.metier import MetierPoste, MetierReservation
 from models.tirage import CardType, TirageCard, Defi, TirageLog, TIRAGE_CARD_BUCKET
 from models.weather import WeatherType
@@ -1278,88 +1278,171 @@ class DatabaseClient:
             raise DatabaseError("Échec de la suppression.")
 
     # ------------------------------------------------------------------
-    # Partenariats
+    # Tickets
     # ------------------------------------------------------------------
 
-    async def create_partenariat(
-        self,
-        guild_id: str,
-        thread_id: str,
-        requester_id: str,
-        partner_name: str,
-        partner_invite: str,
-        description: Optional[str] = None,
-    ) -> Partenariat:
+    async def create_ticket_panel(self, guild_id: str, channel_id: str) -> TicketPanel:
         result = await (
-            self._client.table("partenariats")
-            .insert({
-                "guild_id": guild_id,
-                "thread_id": thread_id,
-                "requester_id": requester_id,
-                "partner_name": partner_name,
-                "partner_invite": partner_invite,
-                "description": description,
-                "status": "pending",
-            })
+            self._client.table("ticket_panels")
+            .upsert(
+                {"guild_id": guild_id, "channel_id": channel_id},
+                on_conflict="guild_id,channel_id",
+            )
             .execute()
         )
         if not result.data:
-            raise DatabaseError("Impossible de créer le partenariat.")
-        return Partenariat.from_dict(result.data[0])
+            raise DatabaseError("Impossible de créer le panel de tickets.")
+        return TicketPanel.from_dict(result.data[0])
 
-    async def get_partenariat_by_thread(self, thread_id: str) -> Optional[Partenariat]:
+    async def update_panel_message_id(self, panel_id: str, message_id: str) -> None:
+        await (
+            self._client.table("ticket_panels")
+            .update({"message_id": message_id})
+            .eq("id", panel_id)
+            .execute()
+        )
+
+    async def create_ticket_category(
+        self,
+        panel_id: str,
+        guild_id: str,
+        name: str,
+        support_role_ids: list[str],
+        discord_category_id: Optional[str],
+        transcript_channel_id: Optional[str],
+        description: Optional[str],
+        button_emoji: Optional[str],
+        position: int,
+    ) -> TicketCategory:
         result = await (
-            self._client.table("partenariats")
+            self._client.table("ticket_categories")
+            .upsert({
+                "panel_id": panel_id,
+                "guild_id": guild_id,
+                "name": name,
+                "support_role_ids": support_role_ids,
+                "discord_category_id": discord_category_id,
+                "transcript_channel_id": transcript_channel_id,
+                "description": description,
+                "button_emoji": button_emoji,
+                "position": position,
+                "is_active": True,
+            }, on_conflict="guild_id,name")
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Impossible de créer la catégorie de tickets.")
+        return TicketCategory.from_dict(result.data[0])
+
+    async def get_all_panels(self, guild_id: Optional[str] = None) -> list[TicketPanel]:
+        q = self._client.table("ticket_panels").select("*")
+        if guild_id is not None:
+            q = q.eq("guild_id", guild_id)
+        result = await q.order("created_at").execute()
+        return [TicketPanel.from_dict(r) for r in result.data]
+
+    async def get_category_by_id(self, category_id: str) -> Optional[TicketCategory]:
+        result = await (
+            self._client.table("ticket_categories")
             .select("*")
-            .eq("thread_id", thread_id)
+            .eq("id", category_id)
             .limit(1)
             .execute()
         )
         if not result.data:
             return None
-        return Partenariat.from_dict(result.data[0])
+        return TicketCategory.from_dict(result.data[0])
 
-    async def update_partenariat_status(
-        self,
-        partenariat_id: str,
-        status: str,
-        control_msg_id: Optional[str] = None,
-    ) -> Partenariat:
-        updates: dict = {"status": status}
-        if control_msg_id is not None:
-            updates["control_msg_id"] = control_msg_id
+    async def get_categories_by_panel(self, panel_id: str) -> list[TicketCategory]:
         result = await (
-            self._client.table("partenariats")
-            .update(updates)
-            .eq("id", partenariat_id)
+            self._client.table("ticket_categories")
+            .select("*")
+            .eq("panel_id", panel_id)
+            .eq("is_active", True)
+            .order("position")
+            .execute()
+        )
+        return [TicketCategory.from_dict(r) for r in result.data]
+
+    async def get_next_ticket_number(self, guild_id: str) -> int:
+        result = await self._client.rpc(
+            "next_ticket_number", {"p_guild_id": guild_id}
+        ).execute()
+        return int(result.data)
+
+    async def create_ticket(
+        self,
+        guild_id: str,
+        category_id: str,
+        channel_id: str,
+        creator_id: str,
+        number: int,
+    ) -> Ticket:
+        result = await (
+            self._client.table("tickets")
+            .insert({
+                "guild_id": guild_id,
+                "category_id": category_id,
+                "channel_id": channel_id,
+                "creator_id": creator_id,
+                "number": number,
+                "status": "open",
+            })
             .execute()
         )
         if not result.data:
-            raise DatabaseError("Impossible de mettre à jour le partenariat.")
-        return Partenariat.from_dict(result.data[0])
+            raise DatabaseError("Impossible de créer le ticket.")
+        return Ticket.from_dict(result.data[0])
 
-    async def get_partenariats(
-        self, guild_id: str, status: Optional[str] = None
-    ) -> list[Partenariat]:
-        q = (
-            self._client.table("partenariats")
-            .select("*")
-            .eq("guild_id", guild_id)
-        )
-        if status:
-            q = q.eq("status", status)
-        result = await q.order("created_at", desc=True).execute()
-        return [Partenariat.from_dict(r) for r in result.data]
-
-    async def get_active_partenariats(self) -> list[Partenariat]:
-        """Tous les partenariats pending/approved (toutes guilds) — pour cog_load."""
+    async def get_ticket_by_channel(self, channel_id: str) -> Optional[Ticket]:
         result = await (
-            self._client.table("partenariats")
+            self._client.table("tickets")
             .select("*")
-            .in_("status", ["pending", "approved"])
+            .eq("channel_id", channel_id)
+            .limit(1)
             .execute()
         )
-        return [Partenariat.from_dict(r) for r in result.data]
+        if not result.data:
+            return None
+        return Ticket.from_dict(result.data[0])
+
+    async def get_ticket_by_id(self, ticket_id: str) -> Optional[Ticket]:
+        result = await (
+            self._client.table("tickets")
+            .select("*")
+            .eq("id", ticket_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return None
+        return Ticket.from_dict(result.data[0])
+
+    async def update_ticket_status(
+        self,
+        ticket_id: str,
+        status: str,
+        closed_at: Optional[str] = None,
+    ) -> None:
+        updates: dict = {"status": status}
+        if closed_at is not None:
+            updates["closed_at"] = closed_at
+        await (
+            self._client.table("tickets")
+            .update(updates)
+            .eq("id", ticket_id)
+            .execute()
+        )
+
+    async def get_tickets_by_status(self, status: str) -> list[Ticket]:
+        """Tous les tickets d'un statut donné (toutes guilds) — pour cog_load."""
+        result = await (
+            self._client.table("tickets")
+            .select("*")
+            .eq("status", status)
+            .execute()
+        )
+        return [Ticket.from_dict(r) for r in result.data]
 
     # ------------------------------------------------------------------
     # Métiers

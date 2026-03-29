@@ -106,8 +106,9 @@ def _build_embeds() -> dict[str, discord.Embed]:
                 ("/config-metier limite",  "Modifier le nombre max de titulaires"),
                 ("/config-metier retirer", "Forcer un personnage à quitter son poste"),
             ]),
-            ("Partenariat", [
-                ("/config-partenariat", "Configurer le salon et le rôle de partenariat"),
+            ("Tickets", [
+                ("/ticket-setup",  "Créer un panel de tickets (wizard 5 étapes)"),
+                ("/ticket-panels", "Lister les panels de tickets configurés"),
             ]),
             ("Confessions", [
                 ("/confession setup",      "Configurer le salon et le mode révision"),

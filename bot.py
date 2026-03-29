@@ -41,7 +41,7 @@ class ClockMasterBot(commands.Bot):
         await self.load_extension("cogs.confessions")
         await self.load_extension("cogs.patchnotes")
         await self.load_extension("cogs.says")
-        await self.load_extension("cogs.partenariat")
+        await self.load_extension("cogs.tickets")
         await self.load_extension("cogs.metiers")
         await self.load_extension("cogs.voice")
 
