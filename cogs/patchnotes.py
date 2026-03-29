@@ -123,7 +123,7 @@ VERSIONS: dict[str, discord.Embed] = {
         ],
     ),
     "3.2.0": _build_embed(
-        "v3.2.0", "Métiers & Postes",
+        "v3.2.0", "Métiers, Tickets & Outils RP",
         [
             ("💼  Système de métiers", (
                 "`/metier-list` — Voir tous les établissements, postes disponibles et titulaires\n"
@@ -131,11 +131,36 @@ VERSIONS: dict[str, discord.Embed] = {
                 "`/metier-quitter` — Libérer son poste actuel\n"
                 "Un seul métier par personnage — les postes pleins n'apparaissent pas dans la sélection"
             )),
-            ("🔧  Admin", (
-                "`/config-metier add` — Ajouter un poste dans un établissement (limite optionnelle)\n"
-                "`/config-metier remove` — Désactiver un poste (avec autocomplete)\n"
-                "`/config-metier limite` — Modifier le nombre max de titulaires d'un poste\n"
-                "`/config-metier retirer` — Forcer un personnage à quitter son poste"
+            ("🎫  Système de tickets", (
+                "Nouveau système de tickets complet inspiré de Ticket Tool\n"
+                "`/ticket-setup` — Wizard 5 étapes pour créer un panel de tickets (nom, rôles support, catégorie Discord, salon transcripts, salon destination)\n"
+                "**Multi-panel** : plusieurs boutons sur un même message — relancer le wizard ajoute un bouton\n"
+                "Chaque ticket crée un canal privé avec les permissions automatiques (créateur + rôles support)\n"
+                "Boutons dans le canal : 🔒 Fermer (confirmation) · 📝 Transcript\n"
+                "À la fermeture : transcript `.txt` envoyé dans le salon configuré, bouton 🔓 Réouvrir\n"
+                "`/ticket-panels` — Lister les panels existants"
+            )),
+            ("🤝  Partenariat — Améliorations", (
+                "La commande unique `/config-partenariat` est remplacée par deux commandes séparées :\n"
+                "`/partenariat-panel <salon>` — Envoyer/remplacer le message protocole dans un salon\n"
+                "`/partenariat-config` — Configurer les rôles (paramètres optionnels `role_partenaire`, `role_support`, `reset_support`)\n"
+                "**Rôles support multiples** : plusieurs rôles peuvent être ajoutés cumulativement\n"
+                "Les membres des rôles support sont automatiquement ajoutés aux threads de demande\n"
+                "Refus → rôle Partenaire retiré automatiquement si déjà attribué\n"
+                "Approbation → boutons simplifiés (plus de Refuser après approbation)\n"
+                "Confirmation → bouton **🔒 Fermer le fil** à la place de l'archivage automatique"
+            )),
+            ("🎙️  Commandes vocales", (
+                "`/voc-join` — Faire rejoindre le bot dans ton salon vocal\n"
+                "`/voc-leave` — Faire quitter le bot du salon vocal"
+            )),
+            ("📄  Vérification de fiche RP", (
+                "`/verif-fiche <lien>` — Vérifier une fiche RP via un lien Google Docs public\n"
+                "Accessible à tous les membres\n"
+                "Contrôle automatique de : tous les champs d'identité · min. 1 relation · "
+                "3 qualités/défauts/aime/n'aime pas · 2 peurs · histoire (min. 150 car.) · "
+                "autorisations de blessure (Oui/Non)\n"
+                "Rapport coloré avec ✅/❌/⚠️ par section"
             )),
         ],
     ),

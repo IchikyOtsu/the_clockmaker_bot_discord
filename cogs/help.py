@@ -66,6 +66,23 @@ def _build_embeds() -> dict[str, discord.Embed]:
                 ("/recours <raison>",  "Faire un recours si tu es banni des confessions"),
             ]),
         ]),
+        "vocal": embed("🎙️  Vocal", [
+            ("Commandes", [
+                ("/voc-join",  "Faire rejoindre le bot dans ton salon vocal"),
+                ("/voc-leave", "Faire quitter le bot du salon vocal"),
+            ]),
+        ]),
+        "fiche": embed("📄  Fiche RP", [
+            ("Commandes", [
+                ("/verif-fiche <lien>", "Vérifier une fiche RP via un lien Google Docs public — génère un rapport détaillé"),
+            ]),
+            ("Ce qui est vérifié", [
+                ("Identité",              "Tous les champs obligatoires (Nom, Prénom, Avatar, Genre, Âge…) + min. 1 relation"),
+                ("Personnalité",          "3 qualités · 3 défauts · 3 aime · 3 n'aime pas · 2 peurs"),
+                ("Histoire",              "Section présente avec un contenu suffisant"),
+                ("Autorisation blessure", "Blessures superficielles / graves / agressions : Oui ou Non renseigné"),
+            ]),
+        ]),
         "admin": embed("🔒  Administration", [
             ("Personnages", [
                 ("/config-perso", "Définir le nombre max de personnages par joueur (1–10)"),
@@ -110,13 +127,17 @@ def _build_embeds() -> dict[str, discord.Embed]:
                 ("/ticket-setup",  "Créer un panel de tickets (wizard 5 étapes)"),
                 ("/ticket-panels", "Lister les panels de tickets configurés"),
             ]),
+            ("Partenariat", [
+                ("/partenariat-panel <salon>",   "Envoyer/remplacer le message protocole de partenariat"),
+                ("/partenariat-config",          "Configurer le rôle partenaire et/ou les rôles support (paramètres optionnels)"),
+            ]),
             ("Confessions", [
-                ("/confession setup",      "Configurer le salon et le mode révision"),
-                ("/banconfess utilisateur", "Bannir un utilisateur des confessions"),
-                ("/banconfess liste",       "Voir les utilisateurs bannis"),
-                ("/banconfess nettoyer",    "Supprimer tous les bans de confessions"),
-                ("/debanconfess utilisateur", "Débannir un utilisateur"),
-                ("/debanconfess confession",  "Débannir l'auteur d'une confession (lien message)"),
+                ("/confession setup",        "Configurer le salon et le mode révision"),
+                ("/banconfess utilisateur",  "Bannir un utilisateur des confessions"),
+                ("/banconfess liste",        "Voir les utilisateurs bannis"),
+                ("/banconfess nettoyer",     "Supprimer tous les bans de confessions"),
+                ("/debanconfess utilisateur","Débannir un utilisateur"),
+                ("/debanconfess confession", "Débannir l'auteur d'une confession (lien message)"),
             ]),
         ]),
     }
@@ -149,6 +170,8 @@ _CAT_BUTTONS = [
     ("meteo",       "🌤️  Météo",           discord.ButtonStyle.primary,   0),
     ("races",       "🗂️  Races",           discord.ButtonStyle.primary,   0),
     ("confessions", "💬  Confessions",     discord.ButtonStyle.primary,   0),
+    ("vocal",       "🎙️  Vocal",           discord.ButtonStyle.primary,   1),
+    ("fiche",       "📄  Fiche RP",        discord.ButtonStyle.primary,   1),
     ("admin",       "🔒  Administration",  discord.ButtonStyle.secondary, 1),
 ]
 
