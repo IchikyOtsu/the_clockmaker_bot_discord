@@ -11,6 +11,7 @@ from models.guild_config import GuildConfig
 from models.race import Race
 from models.confession import Confession, ConfessionBan, ConfessionReply
 from models.ticket import TicketPanel, TicketCategory, Ticket
+from models.partenariat import Partenariat
 from models.metier import MetierPoste, MetierReservation
 from models.tirage import CardType, TirageCard, Defi, TirageLog, TIRAGE_CARD_BUCKET
 from models.weather import WeatherType
@@ -1443,6 +1444,90 @@ class DatabaseClient:
             .execute()
         )
         return [Ticket.from_dict(r) for r in result.data]
+
+    # ------------------------------------------------------------------
+    # Partenariats
+    # ------------------------------------------------------------------
+
+    async def create_partenariat(
+        self,
+        guild_id: str,
+        thread_id: str,
+        requester_id: str,
+        partner_name: str,
+        partner_invite: str,
+        description: Optional[str] = None,
+    ) -> Partenariat:
+        result = await (
+            self._client.table("partenariats")
+            .insert({
+                "guild_id": guild_id,
+                "thread_id": thread_id,
+                "requester_id": requester_id,
+                "partner_name": partner_name,
+                "partner_invite": partner_invite,
+                "description": description,
+                "status": "pending",
+            })
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Impossible de créer le partenariat.")
+        return Partenariat.from_dict(result.data[0])
+
+    async def get_partenariat_by_thread(self, thread_id: str) -> Optional[Partenariat]:
+        result = await (
+            self._client.table("partenariats")
+            .select("*")
+            .eq("thread_id", thread_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return None
+        return Partenariat.from_dict(result.data[0])
+
+    async def update_partenariat_status(
+        self,
+        partenariat_id: str,
+        status: str,
+        control_msg_id: Optional[str] = None,
+    ) -> Partenariat:
+        updates: dict = {"status": status}
+        if control_msg_id is not None:
+            updates["control_msg_id"] = control_msg_id
+        result = await (
+            self._client.table("partenariats")
+            .update(updates)
+            .eq("id", partenariat_id)
+            .execute()
+        )
+        if not result.data:
+            raise DatabaseError("Impossible de mettre à jour le partenariat.")
+        return Partenariat.from_dict(result.data[0])
+
+    async def get_partenariats(
+        self, guild_id: str, status: Optional[str] = None
+    ) -> list[Partenariat]:
+        q = (
+            self._client.table("partenariats")
+            .select("*")
+            .eq("guild_id", guild_id)
+        )
+        if status:
+            q = q.eq("status", status)
+        result = await q.order("created_at", desc=True).execute()
+        return [Partenariat.from_dict(r) for r in result.data]
+
+    async def get_active_partenariats(self) -> list[Partenariat]:
+        """Tous les partenariats pending/approved (toutes guilds) — pour cog_load."""
+        result = await (
+            self._client.table("partenariats")
+            .select("*")
+            .in_("status", ["pending", "approved", "confirmed"])
+            .execute()
+        )
+        return [Partenariat.from_dict(r) for r in result.data]
 
     # ------------------------------------------------------------------
     # Métiers

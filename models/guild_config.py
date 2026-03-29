@@ -16,6 +16,10 @@ class GuildConfig:
     confession_mod_channel_id: Optional[str] = None
     confession_review_mode:    bool = False
     max_characters:            int  = 2          # max characters per player per guild
+    partenariat_channel_id:    Optional[str] = None
+    partenariat_role_id:       Optional[str] = None   # rôle @Partenaire à attribuer
+    partenariat_message_id:    Optional[str] = None   # id du message épinglé dans le salon
+    partenariat_support_role_id: Optional[str] = None # rôle du staff partenariat ajouté aux threads
     raw_config: dict = field(default_factory=dict)  # full JSONB, preserved on partial updates
 
     @classmethod
@@ -37,5 +41,9 @@ class GuildConfig:
             confession_mod_channel_id=cfg.get("confession_mod_channel_id") or None,
             confession_review_mode=bool(cfg.get("confession_review_mode", False)),
             max_characters=int(cfg.get("max_characters", 2)),
+            partenariat_channel_id=cfg.get("partenariat_channel_id") or None,
+            partenariat_role_id=cfg.get("partenariat_role_id") or None,
+            partenariat_message_id=cfg.get("partenariat_message_id") or None,
+            partenariat_support_role_id=cfg.get("partenariat_support_role_id") or None,
             raw_config=cfg,
         )

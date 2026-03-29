@@ -25,7 +25,7 @@ COLOR_GOLD   = 0xC9A84C
 
 def _panel_embed(categories: list[TicketCategory]) -> discord.Embed:
     e = discord.Embed(
-        title="🎫  Support — Tickets",
+        title="🎫  Tickets",
         description="Clique sur un bouton ci-dessous pour ouvrir un ticket.",
         color=COLOR_TICKET,
     )

@@ -23,6 +23,7 @@ class ClockMasterBot(commands.Bot):
     def __init__(self) -> None:
         intents = discord.Intents.default()
         intents.voice_states = True
+        intents.members = True
         super().__init__(command_prefix="!", intents=intents, tree_cls=ClockMasterTree)
         self.db: DatabaseClient  # assigned in setup_hook
 
@@ -42,6 +43,7 @@ class ClockMasterBot(commands.Bot):
         await self.load_extension("cogs.patchnotes")
         await self.load_extension("cogs.says")
         await self.load_extension("cogs.tickets")
+        await self.load_extension("cogs.partenariat")
         await self.load_extension("cogs.metiers")
         await self.load_extension("cogs.voice")
 
