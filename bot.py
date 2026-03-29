@@ -24,6 +24,7 @@ class ClockMasterBot(commands.Bot):
         intents = discord.Intents.default()
         intents.voice_states = True
         intents.members = True
+        intents.message_content = True
         super().__init__(command_prefix="!", intents=intents, tree_cls=ClockMasterTree)
         self.db: DatabaseClient  # assigned in setup_hook
 

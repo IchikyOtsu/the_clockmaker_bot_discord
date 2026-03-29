@@ -155,12 +155,14 @@ VERSIONS: dict[str, discord.Embed] = {
                 "`/voc-leave` — Faire quitter le bot du salon vocal"
             )),
             ("📄  Vérification de fiche RP", (
-                "`/verif-fiche <lien>` — Vérifier une fiche RP via un lien Google Docs public\n"
-                "Accessible à tous les membres\n"
+                "`/verif-fiche [lien]` — Vérifier une fiche RP (lien optionnel)\n"
+                "Sans lien : le bot cherche automatiquement dans les **100 derniers messages** du salon "
+                "(lien Google Docs ou fiche postée directement, même splitée en plusieurs messages)\n"
                 "Contrôle automatique de : tous les champs d'identité · min. 1 relation · "
                 "3 qualités/défauts/aime/n'aime pas · 2 peurs · histoire (min. 150 car.) · "
                 "autorisations de blessure (Oui/Non)\n"
-                "Rapport coloré avec ✅/❌/⚠️ par section"
+                "Compatible avec le formatage Discord (gras `**`, titres `#`, séparateurs `───`, citations `>`)\n"
+                "Rapport coloré avec ✅/❌/⚠️ par section — section personnalité en format libre signalée ⚠️ sans pénalité"
             )),
         ],
     ),

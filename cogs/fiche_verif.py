@@ -17,6 +17,20 @@ COLOR_RED    = 0xED4245
 
 _GDOC_ID_RE = re.compile(r"docs\.google\.com/document/d/([\w-]+)")
 
+_SECTION_HEADERS = [_S for _S in ["IDENTIT[EÉ]", "PERSONNALITE|PERSONALIT[EÉ]|PERSONNALITÉ", "HISTOIRE", "AUTORISATION"]]
+
+
+def _strip_discord_markdown(text: str) -> str:
+    """Strip Discord markdown that interferes with field parsing."""
+    text = re.sub(r"\*\*", "", text)           # bold **
+    text = re.sub(r"(?<!\*)\*(?!\*)", "", text) # italic *
+    text = re.sub(r"__", "", text)             # underline __
+    text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)  # headings #
+    text = re.sub(r"^[─\-─]{3,}\s*$", "", text, flags=re.MULTILINE)  # separators ───
+    text = re.sub(r"^>\s*", "", text, flags=re.MULTILINE)  # blockquotes >
+    return text
+
+
 # Template placeholder strings that should NOT count as actual values
 _PLACEHOLDER_RE = re.compile(
     r"^\s*\{[^}]*\}\s*$"
@@ -158,6 +172,7 @@ _S_AUTORISATION = r"AUTORISATION"
 
 def _parse_and_verify(text: str) -> VerifResult:
     result = VerifResult()
+    text = _strip_discord_markdown(text)
 
     # ------------------------------------------------------------------ #
     # IDENTITE
@@ -439,30 +454,110 @@ class FicheVerifCog(commands.Cog):
                 raise RuntimeError(f"Impossible d'accéder au document (HTTP {resp.status}).")
             return await resp.text(encoding="utf-8", errors="replace")
 
+    async def _scan_channel(
+        self, interaction: discord.Interaction
+    ) -> tuple[str, str] | None:
+        """Scan the last 50 messages of the user in the channel.
+
+        Returns (text, source_hint) where source_hint describes what was found,
+        or None if nothing usable was found.
+        """
+        channel = interaction.channel
+        if channel is None or not hasattr(channel, "history"):
+            return None
+
+        gdoc_url: str | None = None
+        fiche_parts: list[tuple] = []  # (created_at, content)
+
+        async for msg in channel.history(limit=100):  # type: ignore[union-attr]
+            if msg.author.bot:
+                continue
+
+            # 1. Google Docs link in message content
+            gdoc_m = _GDOC_ID_RE.search(msg.content)
+            if gdoc_m and gdoc_url is None:
+                gdoc_url = f"https://docs.google.com/document/d/{gdoc_m.group(1)}"
+
+            # 2. Google Docs link in embeds (Discord auto-preview)
+            if gdoc_url is None:
+                for emb in msg.embeds:
+                    gdoc_m2 = _GDOC_ID_RE.search(emb.url or "")
+                    if gdoc_m2:
+                        gdoc_url = f"https://docs.google.com/document/d/{gdoc_m2.group(1)}"
+                        break
+
+            # 3. Collect message parts that look like fiche sections
+            if any(re.search(pat, msg.content, re.IGNORECASE) for pat in _SECTION_HEADERS):
+                fiche_parts.append((msg.created_at, msg.content))
+
+        # Priority: Google Docs link > Discord messages
+        if gdoc_url:
+            return gdoc_url, "gdoc"
+        if fiche_parts:
+            # Sort oldest first and concatenate all parts
+            fiche_parts.sort(key=lambda x: x[0])
+            combined = "\n\n".join(content for _, content in fiche_parts)
+            return combined, "discord"
+        return None
+
     @app_commands.command(
         name="verif-fiche",
-        description="Vérifier une fiche RP en entrant son lien Google Docs public.",
+        description="Vérifier une fiche RP (lien Google Docs ou recherche dans le salon).",
     )
     @app_commands.describe(
-        lien="Lien Google Docs de la fiche (doit être accessible publiquement en lecture)"
+        lien="Lien Google Docs de la fiche (optionnel — sinon recherche dans tes derniers messages)"
     )
-    async def verif_fiche(self, interaction: discord.Interaction, lien: str) -> None:
+    async def verif_fiche(
+        self, interaction: discord.Interaction, lien: str | None = None
+    ) -> None:
         await interaction.response.defer()
 
-        try:
-            text = await self._fetch_gdoc(lien)
-        except ValueError as exc:
-            await interaction.followup.send(f"❌ {exc}", ephemeral=True)
-            return
-        except PermissionError as exc:
-            await interaction.followup.send(f"🔒 {exc}", ephemeral=True)
-            return
-        except RuntimeError as exc:
-            await interaction.followup.send(f"❌ {exc}", ephemeral=True)
-            return
+        text: str
+        source_note: str = ""
+
+        if lien:
+            # Lien fourni explicitement
+            try:
+                text = await self._fetch_gdoc(lien)
+            except ValueError as exc:
+                await interaction.followup.send(f"❌ {exc}", ephemeral=True)
+                return
+            except PermissionError as exc:
+                await interaction.followup.send(f"🔒 {exc}", ephemeral=True)
+                return
+            except RuntimeError as exc:
+                await interaction.followup.send(f"❌ {exc}", ephemeral=True)
+                return
+        else:
+            # Recherche dans les derniers messages
+            found = await self._scan_channel(interaction)
+            if found is None:
+                await interaction.followup.send(
+                    "❌ Aucune fiche trouvée dans tes 50 derniers messages de ce salon.\n"
+                    "Poste ta fiche ou un lien Google Docs, puis relance `/verif-fiche`.",
+                    ephemeral=True,
+                )
+                return
+
+            payload, kind = found
+            if kind == "gdoc":
+                source_note = "*(source : lien Google Docs trouvé dans le salon)*"
+                try:
+                    text = await self._fetch_gdoc(payload)
+                except PermissionError as exc:
+                    await interaction.followup.send(f"🔒 {exc}", ephemeral=True)
+                    return
+                except RuntimeError as exc:
+                    await interaction.followup.send(f"❌ {exc}", ephemeral=True)
+                    return
+            else:
+                source_note = "*(source : message posté dans le salon)*"
+                text = payload
 
         result = _parse_and_verify(text)
         embed = _build_report_embed(result)
+        if source_note:
+            embed.set_author(name=source_note)
         await interaction.followup.send(embed=embed)
 
 
