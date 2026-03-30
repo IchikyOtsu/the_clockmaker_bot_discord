@@ -23,6 +23,22 @@ def _build_embed(version: str, title: str, sections: list[tuple[str, str]]) -> d
 
 
 VERSIONS: dict[str, discord.Embed] = {
+    "3.3.0": _build_embed(
+        "v3.3.0", "Aether — Interactions sur les posts",
+        [
+            ("🌌  Posts interactifs", (
+                "Chaque post publié dans le feed dispose maintenant de trois boutons d'action :\n"
+                "❤️ **J'aime** — aimer / ne plus aimer un post (compteur visible par tous)\n"
+                "➕ **Suivre** — suivre le compte Aether de l'auteur directement depuis le post\n"
+                "👤 **Profil** — afficher le profil complet de l'auteur en éphémère\n"
+                "Les boutons restent actifs après redémarrage du bot (vues persistantes)"
+            )),
+            ("🎨  Mise en page unifiée", (
+                "Tous les posts ont désormais une hauteur fixe grâce à un cadre `⎯⎯⎯` identique à celui des profils\n"
+                "Les boutons apparaissent toujours au même endroit sous le post, peu importe la longueur du texte"
+            )),
+        ],
+    ),
     "1.0.0": _build_embed(
         "v1.0.0", "Lancement",
         [
@@ -178,7 +194,7 @@ VERSIONS: dict[str, discord.Embed] = {
     ),
 }
 
-VERSIONS_ORDER = ["3.2.0", "3.1.0", "3.0.0", "2.0.0", "1.0.0"]   # newest first
+VERSIONS_ORDER = ["3.3.0", "3.2.0", "3.1.0", "3.0.0", "2.0.0", "1.0.0"]   # newest first
 
 
 # ---------------------------------------------------------------------------

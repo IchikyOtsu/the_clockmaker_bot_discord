@@ -77,24 +77,28 @@ def _profile_embed(
     return embed
 
 
-_POST_MIN_LINES = 8   # minimum visual height for posts without images
+_POST_MIN_LINES = 1  # guaranteed height so buttons always fit below
 
 def _post_embed(post: AetherPost, account: AetherAccount, character_avatar: str | None) -> discord.Embed:
-    # Pad content to a minimum height so all posts look consistently large
     content = post.content
-    if not post.image_url:
-        current_lines = content.count("\n") + 1
-        if current_lines < _POST_MIN_LINES:
-            content = content + "\n" * (_POST_MIN_LINES - current_lines)
+    if len(content) > 500:
+        content = content[:497] + "…"
 
-    embed = discord.Embed(description=content, color=COLOR_AETHER)
+    # Pad to minimum height with zero-width spaces so all posts look the same size
+    content_lines = content.count("\n") + 1
+    if content_lines < _POST_MIN_LINES:
+        content = content + "\n\u200b" * (_POST_MIN_LINES - content_lines)
+
+    body = f"{SEP}\n{content}\n{SEP}"
+
+    embed = discord.Embed(description=body, color=COLOR_AETHER)
     embed.set_author(
-        name=f"@{account.username}",
+        name=f"{account.display_name}  ·  @{account.username}",
         icon_url=character_avatar or discord.Embed.Empty,
     )
     if post.image_url:
         embed.set_image(url=post.image_url)
-    embed.set_footer(text=f"{account.display_name}  ·  {NETWORK_NAME}")
+    embed.set_footer(text=NETWORK_NAME)
     return embed
 
 
@@ -118,7 +122,7 @@ class AetherPostView(discord.ui.View):
         self._account_id = account_id
 
         like_btn = discord.ui.Button(
-            label=f"❤️  J'aime ({like_count})",
+            label=f"❤️  {like_count}",
             style=discord.ButtonStyle.secondary,
             custom_id=f"aether_like:{post_id}",
         )
@@ -126,15 +130,15 @@ class AetherPostView(discord.ui.View):
         self.add_item(like_btn)
 
         follow_btn = discord.ui.Button(
-            label="Suivre",
-            style=discord.ButtonStyle.primary,
+            label="➕",
+            style=discord.ButtonStyle.secondary,
             custom_id=f"aether_post_follow:{account_id}",
         )
         follow_btn.callback = self._follow_from_post
         self.add_item(follow_btn)
 
         profile_btn = discord.ui.Button(
-            label="👤  Profil",
+            label="👤",
             style=discord.ButtonStyle.secondary,
             custom_id=f"aether_post_profile:{account_id}",
         )
@@ -176,7 +180,7 @@ class AetherPostView(discord.ui.View):
         # Update the like button label on the message
         for item in self.children:
             if isinstance(item, discord.ui.Button) and item.custom_id == f"aether_like:{self._post_id}":
-                item.label = f"❤️  J'aime ({like_count})"
+                item.label = f"❤️  {like_count}"
                 break
 
         try:
