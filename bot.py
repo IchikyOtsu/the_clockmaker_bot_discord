@@ -48,6 +48,7 @@ class ClockMasterBot(commands.Bot):
         await self.load_extension("cogs.metiers")
         await self.load_extension("cogs.voice")
         await self.load_extension("cogs.fiche_verif")
+        await self.load_extension("cogs.aether")
 
         if config.DEV_GUILD_ID:
             guild = discord.Object(id=config.DEV_GUILD_ID)

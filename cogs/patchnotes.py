@@ -154,6 +154,16 @@ VERSIONS: dict[str, discord.Embed] = {
                 "`/voc-join` — Faire rejoindre le bot dans ton salon vocal\n"
                 "`/voc-leave` — Faire quitter le bot du salon vocal"
             )),
+            ("🌌  Aether — Réseau social RP", (
+                "Nouveau système de réseau social fictif pour les personnages\n"
+                "`/aether-create` — Créer un compte avec pseudo, bio, pronoms et musique (modal de setup)\n"
+                "`/aether-profil [pseudo]` — Afficher un profil avec stats (publications · followers · suivi(e)s)\n"
+                "Boutons sur le profil : **Suivre/Ne plus suivre** · **Contacter** (révèle la mention Discord) · **···**\n"
+                "`/aether-post <texte> [image]` — Publier un post dans le salon feed configuré\n"
+                "`/aether-edit` — Modifier son profil (modal pré-rempli)\n"
+                "`/aether-delete` — Supprimer son compte et tous ses posts\n"
+                "`/config-aether <salon>` *(admin)* — Configurer le salon feed"
+            )),
             ("📄  Vérification de fiche RP", (
                 "`/verif-fiche [lien]` — Vérifier une fiche RP (lien optionnel)\n"
                 "Sans lien : le bot cherche automatiquement dans les **100 derniers messages** du salon "

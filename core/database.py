@@ -6,6 +6,7 @@ from typing import Optional
 
 from supabase import acreate_client, AsyncClient
 
+from models.aether import AetherAccount, AetherPost
 from models.character import Character, _compute_age
 from models.guild_config import GuildConfig
 from models.race import Race
@@ -1681,3 +1682,233 @@ class DatabaseClient:
 
     async def remove_metier_reservation_by_character(self, character_id: str) -> None:
         await self.quit_metier(character_id)
+
+    # ------------------------------------------------------------------
+    # Aether — réseau social RP
+    # ------------------------------------------------------------------
+
+    async def _aether_fill_counts(self, account: AetherAccount) -> AetherAccount:
+        """Inject follower/following/post counts into an AetherAccount."""
+        acc_id = str(account.id)
+        followers = await self._client.table("aether_follows").select("follower_id", count="exact").eq("following_id", acc_id).execute()
+        following = await self._client.table("aether_follows").select("following_id", count="exact").eq("follower_id", acc_id).execute()
+        posts = await self._client.table("aether_posts").select("id", count="exact").eq("account_id", acc_id).execute()
+        account.follower_count = followers.count or 0
+        account.following_count = following.count or 0
+        account.post_count = posts.count or 0
+        return account
+
+    async def create_aether_account(
+        self,
+        character_id: str,
+        guild_id: str,
+        username: str,
+        display_name: str,
+        pronouns: str | None,
+        bio: str | None,
+        music_title: str | None,
+        music_artist: str | None,
+    ) -> AetherAccount:
+        result = await (
+            self._client.table("aether_accounts")
+            .insert({
+                "character_id": character_id,
+                "guild_id": guild_id,
+                "username": username.lower(),
+                "display_name": display_name,
+                "pronouns": pronouns or None,
+                "bio": bio or None,
+                "music_title": music_title or None,
+                "music_artist": music_artist or None,
+            })
+            .execute()
+        )
+        return AetherAccount.from_dict(result.data[0])
+
+    async def get_aether_account_by_character(self, character_id: str) -> AetherAccount | None:
+        result = await (
+            self._client.table("aether_accounts")
+            .select("*")
+            .eq("character_id", character_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return None
+        acc = AetherAccount.from_dict(result.data[0])
+        return await self._aether_fill_counts(acc)
+
+    async def get_aether_account_by_username(self, guild_id: str, username: str) -> AetherAccount | None:
+        result = await (
+            self._client.table("aether_accounts")
+            .select("*")
+            .eq("guild_id", guild_id)
+            .eq("username", username.lower())
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return None
+        acc = AetherAccount.from_dict(result.data[0])
+        return await self._aether_fill_counts(acc)
+
+    async def get_aether_account_by_id(self, account_id: str) -> AetherAccount | None:
+        result = await (
+            self._client.table("aether_accounts")
+            .select("*")
+            .eq("id", account_id)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return None
+        acc = AetherAccount.from_dict(result.data[0])
+        return await self._aether_fill_counts(acc)
+
+    async def update_aether_account(self, account_id: str, updates: dict) -> AetherAccount:
+        result = await (
+            self._client.table("aether_accounts")
+            .update(updates)
+            .eq("id", account_id)
+            .execute()
+        )
+        acc = AetherAccount.from_dict(result.data[0])
+        return await self._aether_fill_counts(acc)
+
+    async def delete_aether_account(self, account_id: str) -> None:
+        await (
+            self._client.table("aether_accounts")
+            .delete()
+            .eq("id", account_id)
+            .execute()
+        )
+
+    async def get_aether_followers(self, account_id: str) -> list[AetherAccount]:
+        """Accounts that follow `account_id`."""
+        result = await (
+            self._client.table("aether_follows")
+            .select("follower_id")
+            .eq("following_id", account_id)
+            .execute()
+        )
+        accounts = []
+        for row in result.data:
+            acc = await self.get_aether_account_by_id(row["follower_id"])
+            if acc:
+                accounts.append(acc)
+        return accounts
+
+    async def get_aether_following(self, account_id: str) -> list[AetherAccount]:
+        """Accounts that `account_id` follows."""
+        result = await (
+            self._client.table("aether_follows")
+            .select("following_id")
+            .eq("follower_id", account_id)
+            .execute()
+        )
+        accounts = []
+        for row in result.data:
+            acc = await self.get_aether_account_by_id(row["following_id"])
+            if acc:
+                accounts.append(acc)
+        return accounts
+
+    async def follow_aether(self, follower_id: str, following_id: str, guild_id: str) -> None:
+        await (
+            self._client.table("aether_follows")
+            .upsert({"follower_id": follower_id, "following_id": following_id, "guild_id": guild_id})
+            .execute()
+        )
+
+    async def unfollow_aether(self, follower_id: str, following_id: str) -> None:
+        await (
+            self._client.table("aether_follows")
+            .delete()
+            .eq("follower_id", follower_id)
+            .eq("following_id", following_id)
+            .execute()
+        )
+
+    async def is_aether_following(self, follower_id: str, following_id: str) -> bool:
+        result = await (
+            self._client.table("aether_follows")
+            .select("follower_id")
+            .eq("follower_id", follower_id)
+            .eq("following_id", following_id)
+            .limit(1)
+            .execute()
+        )
+        return bool(result.data)
+
+    async def create_aether_post(
+        self, account_id: str, guild_id: str, content: str, image_url: str | None
+    ) -> AetherPost:
+        result = await (
+            self._client.table("aether_posts")
+            .insert({
+                "account_id": account_id,
+                "guild_id": guild_id,
+                "content": content,
+                "image_url": image_url or None,
+            })
+            .execute()
+        )
+        return AetherPost.from_dict(result.data[0])
+
+    async def get_aether_posts(self, account_id: str, limit: int = 10) -> list[AetherPost]:
+        result = await (
+            self._client.table("aether_posts")
+            .select("*")
+            .eq("account_id", account_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return [AetherPost.from_dict(r) for r in result.data]
+
+    async def get_all_aether_posts(self, limit: int = 200) -> list[AetherPost]:
+        result = await (
+            self._client.table("aether_posts")
+            .select("*")
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return [AetherPost.from_dict(r) for r in result.data]
+
+    # -- Likes ----------------------------------------------------------
+
+    async def like_aether_post(self, post_id: str, account_id: str, guild_id: str) -> None:
+        await (
+            self._client.table("aether_likes")
+            .upsert({"post_id": post_id, "account_id": account_id, "guild_id": guild_id})
+            .execute()
+        )
+
+    async def unlike_aether_post(self, post_id: str, account_id: str) -> None:
+        await (
+            self._client.table("aether_likes")
+            .delete()
+            .eq("post_id", post_id)
+            .eq("account_id", account_id)
+            .execute()
+        )
+
+    async def is_aether_liked(self, post_id: str, account_id: str) -> bool:
+        result = await (
+            self._client.table("aether_likes")
+            .select("post_id", count="exact")
+            .eq("post_id", post_id)
+            .eq("account_id", account_id)
+            .execute()
+        )
+        return (result.count or 0) > 0
+
+    async def get_aether_like_count(self, post_id: str) -> int:
+        result = await (
+            self._client.table("aether_likes")
+            .select("post_id", count="exact")
+            .eq("post_id", post_id)
+            .execute()
+        )
+        return result.count or 0

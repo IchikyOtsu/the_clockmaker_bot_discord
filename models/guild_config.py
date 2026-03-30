@@ -20,6 +20,7 @@ class GuildConfig:
     partenariat_role_id:       Optional[str] = None   # rôle @Partenaire à attribuer
     partenariat_message_id:    Optional[str] = None   # id du message épinglé dans le salon
     partenariat_support_role_ids: list[str] = field(default_factory=list)  # rôles du staff partenariat ajoutés aux threads
+    aether_feed_channel_id: Optional[str] = None  # salon feed du réseau social Aether
     raw_config: dict = field(default_factory=dict)  # full JSONB, preserved on partial updates
 
     @classmethod
@@ -45,5 +46,6 @@ class GuildConfig:
             partenariat_role_id=cfg.get("partenariat_role_id") or None,
             partenariat_message_id=cfg.get("partenariat_message_id") or None,
             partenariat_support_role_ids=[str(r) for r in cfg.get("partenariat_support_role_ids", [])],
+            aether_feed_channel_id=cfg.get("aether_feed_channel_id") or None,
             raw_config=cfg,
         )

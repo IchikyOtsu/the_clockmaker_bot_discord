@@ -66,6 +66,19 @@ def _build_embeds() -> dict[str, discord.Embed]:
                 ("/recours <raison>",  "Faire un recours si tu es banni des confessions"),
             ]),
         ]),
+        "aether": embed("🌌  Aether", [
+            ("Commandes", [
+                ("/aether-create",        "Créer un compte Aether pour ton personnage actif"),
+                ("/aether-profil [pseudo]","Voir un profil (le tien par défaut)"),
+                ("/aether-post <texte>",  "Publier un post dans le salon feed (image optionnelle)"),
+                ("/aether-edit",          "Modifier ton profil (bio, pronoms, musique…)"),
+                ("/aether-delete",        "Supprimer ton compte et tous tes posts"),
+            ]),
+            ("Profil", [
+                ("Bouton Suivre",    "Suivre / ne plus suivre un compte"),
+                ("Bouton Contacter", "Voir la mention Discord du joueur derrière le personnage"),
+            ]),
+        ]),
         "vocal": embed("🎙️  Vocal", [
             ("Commandes", [
                 ("/voc-join",  "Faire rejoindre le bot dans ton salon vocal"),
@@ -131,6 +144,9 @@ def _build_embeds() -> dict[str, discord.Embed]:
                 ("/partenariat-panel <salon>",   "Envoyer/remplacer le message protocole de partenariat"),
                 ("/partenariat-config",          "Configurer le rôle partenaire et/ou les rôles support (paramètres optionnels)"),
             ]),
+            ("Aether", [
+                ("/config-aether <salon>", "Configurer le salon feed Aether"),
+            ]),
             ("Confessions", [
                 ("/confession setup",        "Configurer le salon et le mode révision"),
                 ("/banconfess utilisateur",  "Bannir un utilisateur des confessions"),
@@ -170,9 +186,10 @@ _CAT_BUTTONS = [
     ("meteo",       "🌤️  Météo",           discord.ButtonStyle.primary,   0),
     ("races",       "🗂️  Races",           discord.ButtonStyle.primary,   0),
     ("confessions", "💬  Confessions",     discord.ButtonStyle.primary,   0),
+    ("aether",      "🌌  Aether",           discord.ButtonStyle.primary,   1),
     ("vocal",       "🎙️  Vocal",           discord.ButtonStyle.primary,   1),
     ("fiche",       "📄  Fiche RP",        discord.ButtonStyle.primary,   1),
-    ("admin",       "🔒  Administration",  discord.ButtonStyle.secondary, 1),
+    ("admin",       "🔒  Administration",  discord.ButtonStyle.secondary, 2),
 ]
 
 
