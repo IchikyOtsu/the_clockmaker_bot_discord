@@ -26,7 +26,7 @@ VERSIONS: dict[str, discord.Embed] = {
     "3.3.0": _build_embed(
         "v3.3.0", "Aether & Partenariat — Interactions et plaintes",
         [
-            ("🌌  Posts Aether interactifs", (
+            ("🌌  Posts Aether interactifs WIP", (
                 "Chaque post publié dans le feed dispose maintenant de trois boutons d'action :\n"
                 "❤️ **J'aime** — aimer / ne plus aimer un post (compteur visible par tous)\n"
                 "➕ **Suivre** — suivre le compte Aether de l'auteur directement depuis le post\n"
