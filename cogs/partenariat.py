@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -14,12 +16,17 @@ COLOR_GREEN = 0x57F287
 COLOR_RED = 0xED4245
 
 
+
 # ---------------------------------------------------------------------------
 # Embeds
 # ---------------------------------------------------------------------------
 
 def _protocol_embed() -> discord.Embed:
-    e = discord.Embed(title="📋  Partenariat — Protocole", color=COLOR_PART)
+    e = discord.Embed(
+        title="📋  Partenariat — Protocole",
+        description="Utilise le menu ci-dessous pour **faire une demande de partenariat** ou **déposer une plainte**.",
+        color=COLOR_PART,
+    )
     e.add_field(
         name="SC-P01 — Procédure de demande",
         value=(
@@ -101,6 +108,15 @@ def _confirmed_embed(partner_name: str) -> discord.Embed:
 
 def _refused_embed(reason: str) -> discord.Embed:
     e = discord.Embed(title="❌  Demande refusée", description=reason, color=COLOR_RED)
+    e.set_footer(text="The Clockmaster • Partenariat")
+    return e
+
+
+def _complaint_embed(objet: str, description: str, author: discord.Member) -> discord.Embed:
+    e = discord.Embed(title=f"⚠️  Plainte — {objet}", color=COLOR_RED)
+    e.add_field(name="Objet", value=objet, inline=True)
+    e.add_field(name="Déposée par", value=author.mention, inline=True)
+    e.add_field(name="Description", value=description, inline=False)
     e.set_footer(text="The Clockmaster • Partenariat")
     return e
 
@@ -207,6 +223,90 @@ class PartnershipRequestModal(discord.ui.Modal, title="Demande de partenariat"):
         )
 
 
+class ComplaintModal(discord.ui.Modal, title="Déposer une plainte"):
+    objet = discord.ui.TextInput(
+        label="Objet / Serveur concerné",
+        placeholder="ex: Serveur XYZ, utilisateur…",
+        max_length=100,
+    )
+    description = discord.ui.TextInput(
+        label="Description de la plainte",
+        style=discord.TextStyle.paragraph,
+        placeholder="Décris le problème en détail…",
+        max_length=1000,
+    )
+
+    def __init__(self, cog: PartenariatCog) -> None:
+        super().__init__()
+        self._cog = cog
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+
+        guild_id = str(interaction.guild_id)
+        cfg = await self._cog.db.get_guild_config(guild_id)
+
+        if not cfg or not cfg.partenariat_channel_id:
+            await interaction.followup.send(
+                "❌ Le salon partenariat n'est pas configuré. Un admin doit utiliser `/partenariat-panel`.",
+                ephemeral=True,
+            )
+            return
+
+        channel = interaction.guild.get_channel(int(cfg.partenariat_channel_id))  # type: ignore[union-attr]
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.followup.send("❌ Salon partenariat introuvable.", ephemeral=True)
+            return
+
+        objet = self.objet.value.strip()
+        description = self.description.value.strip()
+
+        try:
+            thread = await channel.create_thread(
+                name=f"plainte・{objet[:48]}",
+                type=discord.ChannelType.private_thread,
+                invitable=False,
+                auto_archive_duration=10080,
+            )
+        except discord.HTTPException as exc:
+            await interaction.followup.send(
+                f"❌ Impossible de créer le fil : {exc}", ephemeral=True
+            )
+            return
+
+        await thread.add_user(interaction.user)  # type: ignore[arg-type]
+
+        # Ajouter les membres des rôles support plainte
+        if cfg.plainte_support_role_ids:
+            support_roles = {
+                role
+                for rid in cfg.plainte_support_role_ids
+                if (role := interaction.guild.get_role(int(rid))) is not None  # type: ignore[union-attr]
+            }
+            if support_roles:
+                try:
+                    async for member in interaction.guild.fetch_members(limit=None):  # type: ignore[union-attr]
+                        if support_roles.intersection(member.roles):
+                            try:
+                                await thread.add_user(member)
+                            except discord.HTTPException:
+                                pass
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+
+        close_view = ComplaintCloseView(self._cog)
+        self._cog.bot.add_view(close_view)
+        await thread.send(
+            embed=_complaint_embed(objet, description, interaction.user),  # type: ignore[arg-type]
+            view=close_view,
+        )
+
+        await interaction.followup.send(
+            f"✅ Ta plainte a été transmise. Suis l'avancement dans {thread.mention}.",
+            ephemeral=True,
+        )
+
+
 class RefuseModal(discord.ui.Modal, title="Refus de partenariat"):
     reason = discord.ui.TextInput(
         label="Raison du refus",
@@ -257,8 +357,46 @@ class RefuseModal(discord.ui.Modal, title="Refus de partenariat"):
 # Views
 # ---------------------------------------------------------------------------
 
+class ComplaintCloseView(discord.ui.View):
+    """Vue persistante dans un fil de plainte — bouton de fermeture réservé au support."""
+
+    def __init__(self, cog: PartenariatCog) -> None:
+        super().__init__(timeout=None)
+        self._cog = cog
+
+        btn = discord.ui.Button(
+            label="🔒  Fermer le fil",
+            style=discord.ButtonStyle.secondary,
+            custom_id="complaint_close",
+        )
+        btn.callback = self._close
+        self.add_item(btn)
+
+    async def _close(self, interaction: discord.Interaction) -> None:
+        guild_id = str(interaction.guild_id)
+        cfg = await self._cog.db.get_guild_config(guild_id)
+
+        # Autorisé si rôle support plainte OU admin
+        is_support = False
+        if cfg and cfg.plainte_support_role_ids:
+            support_ids = {int(r) for r in cfg.plainte_support_role_ids}
+            member_ids = {r.id for r in interaction.user.roles}  # type: ignore[union-attr]
+            is_support = bool(support_ids & member_ids)
+
+        if not is_support and not await is_admin(interaction, self._cog.db):
+            await interaction.response.send_message("❌ Réservé au staff.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await interaction.channel.edit(archived=True, locked=True)  # type: ignore[union-attr]
+        except discord.HTTPException:
+            pass
+        await interaction.followup.send("✅ Fil archivé.", ephemeral=True)
+
+
 class PartnershipButtonView(discord.ui.View):
-    """Vue persistante sur le message épinglé dans le salon de partenariat."""
+    """Vue persistante legacy — conservée pour les anciens messages déjà en place."""
 
     def __init__(self, cog: PartenariatCog) -> None:
         super().__init__(timeout=None)
@@ -281,6 +419,69 @@ class PartnershipButtonView(discord.ui.View):
         await interaction.response.send_modal(
             PartnershipRequestModal(self._cog, channel)
         )
+
+
+_PANEL_COOLDOWN = 30  # secondes entre deux ouvertures de ticket par le même user
+_panel_cooldowns: dict[int, float] = {}
+
+
+class PartnershipPanelView(discord.ui.View):
+    """Vue persistante du panel : menu déroulant avec choix Partenariat ou Plainte."""
+
+    def __init__(self, cog: PartenariatCog) -> None:
+        super().__init__(timeout=None)
+        self._cog = cog
+
+        select = discord.ui.Select(
+            placeholder="Sélectionne une option…",
+            custom_id="part_panel_select",
+            options=[
+                discord.SelectOption(
+                    label="📨  Faire une demande de partenariat",
+                    value="partenariat",
+                ),
+                discord.SelectOption(
+                    label="⚠️  Déposer une plainte",
+                    value="plainte",
+                ),
+            ],
+        )
+        select.callback = self._on_select
+        self.add_item(select)
+
+    async def _on_select(self, interaction: discord.Interaction) -> None:
+        # Rate limit
+        uid = interaction.user.id
+        now = time.monotonic()
+        last = _panel_cooldowns.get(uid, 0.0)
+        remaining = _PANEL_COOLDOWN - (now - last)
+        if remaining > 0:
+            await interaction.response.send_message(
+                f"⏳ Attends encore **{int(remaining)}s** avant d'ouvrir un nouveau ticket.",
+                ephemeral=True,
+            )
+            return
+        _panel_cooldowns[uid] = now
+
+        value = interaction.data["values"][0]  # type: ignore[index]
+        if value == "partenariat":
+            channel = interaction.channel
+            if not isinstance(channel, discord.TextChannel):
+                await interaction.response.send_message(
+                    "❌ Ce menu ne fonctionne que dans un salon texte.", ephemeral=True
+                )
+                return
+            await interaction.response.send_modal(
+                PartnershipRequestModal(self._cog, channel)
+            )
+        else:
+            await interaction.response.send_modal(ComplaintModal(self._cog))
+
+        # Réinitialise le select à son placeholder après ouverture du modal
+        try:
+            await interaction.followup.edit_message(interaction.message.id, view=self)  # type: ignore[union-attr]
+        except discord.HTTPException:
+            pass
 
 
 class PartnershipCloseView(discord.ui.View):
@@ -451,7 +652,9 @@ class PartenariatCog(commands.Cog):
 
     async def cog_load(self) -> None:
         # Re-register persistent views au redémarrage
-        self.bot.add_view(PartnershipButtonView(self))
+        self.bot.add_view(PartnershipPanelView(self))   # nouveau panel (dropdown)
+        self.bot.add_view(PartnershipButtonView(self))  # legacy : anciens messages épinglés
+        self.bot.add_view(ComplaintCloseView(self))     # bouton fermeture fils de plainte
         active = await self.db.get_active_partenariats()
         for p in active:
             if p.status == "confirmed":
@@ -495,8 +698,8 @@ class PartenariatCog(commands.Cog):
             except discord.HTTPException:
                 pass
 
-        # Poster le message protocole + bouton
-        view = PartnershipButtonView(self)
+        # Poster le message protocole + panel (bouton + dropdown)
+        view = PartnershipPanelView(self)
         msg = await salon.send(embed=_protocol_embed(), view=view)
         self.bot.add_view(view)
 
@@ -574,6 +777,55 @@ class PartenariatCog(commands.Cog):
 
         await self.db.update_guild_config_keys(guild_id, updates)
 
+        await interaction.followup.send(
+            "✅ Configuration mise à jour :\n" + "\n".join(f"• {c}" for c in changes),
+            ephemeral=True,
+        )
+
+
+    @app_commands.command(
+        name="plainte-config",
+        description="Configurer les rôles support pour les fils de plainte (paramètres optionnels).",
+    )
+    @app_commands.describe(
+        role_support="Rôle du staff à ajouter aux fils de plainte (cumulable)",
+        reset_support="Vider la liste des rôles support plainte (True = tout supprimer)",
+    )
+    async def plainte_config(
+        self,
+        interaction: discord.Interaction,
+        role_support: discord.Role | None = None,
+        reset_support: bool = False,
+    ) -> None:
+        if not await is_admin(interaction, self.db):
+            await interaction.response.send_message("❌ Réservé aux admins.", ephemeral=True)
+            return
+
+        if role_support is None and not reset_support:
+            await interaction.response.send_message(
+                "❌ Indique au moins un paramètre à modifier.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        guild_id = str(interaction.guild_id)
+
+        updates: dict = {}
+        changes: list[str] = []
+
+        if reset_support:
+            updates["plainte_support_role_ids"] = []
+            changes.append("rôles support plainte → liste vidée")
+
+        if role_support is not None:
+            cfg = await self.db.get_guild_config(guild_id)
+            existing = list(cfg.plainte_support_role_ids) if cfg else []
+            if str(role_support.id) not in existing:
+                existing.append(str(role_support.id))
+            updates["plainte_support_role_ids"] = existing
+            changes.append(f"rôle support plainte ajouté → {role_support.mention}")
+
+        await self.db.update_guild_config_keys(guild_id, updates)
         await interaction.followup.send(
             "✅ Configuration mise à jour :\n" + "\n".join(f"• {c}" for c in changes),
             ephemeral=True,

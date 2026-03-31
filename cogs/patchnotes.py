@@ -24,18 +24,26 @@ def _build_embed(version: str, title: str, sections: list[tuple[str, str]]) -> d
 
 VERSIONS: dict[str, discord.Embed] = {
     "3.3.0": _build_embed(
-        "v3.3.0", "Aether — Interactions sur les posts",
+        "v3.3.0", "Aether & Partenariat — Interactions et plaintes",
         [
-            ("🌌  Posts interactifs", (
+            ("🌌  Posts Aether interactifs", (
                 "Chaque post publié dans le feed dispose maintenant de trois boutons d'action :\n"
                 "❤️ **J'aime** — aimer / ne plus aimer un post (compteur visible par tous)\n"
                 "➕ **Suivre** — suivre le compte Aether de l'auteur directement depuis le post\n"
                 "👤 **Profil** — afficher le profil complet de l'auteur en éphémère\n"
                 "Les boutons restent actifs après redémarrage du bot (vues persistantes)"
             )),
-            ("🎨  Mise en page unifiée", (
+            ("🎨  Mise en page Aether unifiée", (
                 "Tous les posts ont désormais une hauteur fixe grâce à un cadre `⎯⎯⎯` identique à celui des profils\n"
                 "Les boutons apparaissent toujours au même endroit sous le post, peu importe la longueur du texte"
+            )),
+            ("⚠️  Système de plaintes", (
+                "Le panel `/partenariat-panel` intègre maintenant un **menu déroulant** avec deux choix :\n"
+                "📨 **Faire une demande de partenariat** — ouvre le formulaire habituel\n"
+                "⚠️ **Déposer une plainte** — ouvre un formulaire (objet + description) et crée un fil privé\n"
+                "Le fil de plainte contient un bouton **🔒 Fermer le fil** réservé aux rôles support\n"
+                "Commande `/plainte-config` pour configurer les rôles support des plaintes\n"
+                "Rate limit de **30 secondes** par utilisateur sur le menu du panel"
             )),
         ],
     ),
